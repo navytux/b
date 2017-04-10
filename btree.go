@@ -162,7 +162,7 @@ func (q *x) extract(i int) {
 }
 
 func (q *x) insert(i int, k interface{} /*K*/, ch interface{}) *x {
-	dbg("X.insert %v @%d", q, i)
+	//dbg("X.insert %v @%d", q, i)
 	c := q.c
 	if i < c {
 		q.x[c+1].ch = q.x[c].ch
@@ -626,75 +626,94 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
-	defer func() {
-		//if r := recover(); r != nil {
-		//	panic(r)
-		//}
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
-
-	pi := -1
-	var p *x
-	var dd *d
+	//dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
+	//defer func() {
+	//	//if r := recover(); r != nil {
+	//	//	panic(r)
+	//	//}
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		dbg("HIT FOUND\t-> %d, %v", i, ok)
-		dd, p, pi = t.hit, t.hitP, t.hitPi
+		//dbg("hit found\t-> %d, %v", i, ok)
+		dd, p, pi := t.hit, t.hitP, t.hitPi
+
+		switch {
+		case ok:
+			//dbg("ok'")
+			dd.d[i].v = v
+			t.hitIdx = i
+			return
+
+		case dd.c < 2*kd:
+			//dbg("insert'")
+			t.insert(dd, i, k, v)
+			return
+
+		case p == nil || p.c <= 2*kx:
+			//dbg("overflow'")
+			t.overflow(p, dd, pi, i, k, v)
+			return
+
+		default:
+			// here: need to overflow but p.c > 2*kx -> need to do
+			// the usual scan to split index pages
+		}
+	}
 
 	// data page not quickly found - search and descent from root
-	} else {
-		q := t.r
-		if q == nil {
-			dbg("empty")
-			z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
-			t.r, t.first, t.last = z, z, z
+	pi := -1
+	var p *x
+	q := t.r
+
+	if q == nil {
+		//dbg("empty")
+		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
+		t.r, t.first, t.last = z, z, z
+		return
+	}
+
+	for {
+		i, ok = t.find(q, k)
+		switch x := q.(type) {
+		case *x:
+			if x.c > 2*kx {
+				x, i = t.splitX(p, x, pi, i)
+			}
+			p = x
+			if ok {
+				pi = i + 1
+				q = x.x[i+1].ch
+			} else {
+				pi = i
+				q = x.x[i].ch
+			}
+
+		case *d:
+			// data page found - perform the update
+			switch {
+			case ok:
+				//dbg("ok")
+				x.d[i].v = v
+				t.hit, t.hitIdx = x, i
+				t.hitP, t.hitPi = p, pi
+
+			case x.c < 2*kd:
+				//dbg("insert")
+				t.insert(x, i, k, v)
+				t.hitP, t.hitPi = p, pi
+
+			default:
+				//dbg("overflow")
+				t.overflow(p, x, pi, i, k, v)
+			}
+
 			return
 		}
-
-	loop:
-		for {
-			i, ok = t.find(q, k)
-			switch x := q.(type) {
-			case *x:
-				if x.c > 2*kx {
-					x, i = t.splitX(p, x, pi, i)
-				}
-				p = x
-				if ok {
-					pi = i + 1
-					q = x.x[i+1].ch
-				} else {
-					pi = i
-					q = x.x[i].ch
-				}
-
-			case *d:
-				dd = x
-				break loop
-			}
-		}
 	}
 
-	// data page found - perform the update
-	switch {
-	case ok:
-		dbg("ok")
-		dd.d[i].v = v
-		t.hit, t.hitIdx = dd, i
-		t.hitP, t.hitPi = p, pi
-
-	case dd.c < 2*kd:
-		dbg("insert")
-		t.insert(dd, i, k, v)
-		t.hitP, t.hitPi = p, pi
-
-	default:
-		dbg("overflow")
-		t.overflow(p, dd, pi, i, k, v)
-	}
 }
 
 // Put combines Get and Set in a more efficient way where the tree is walked
