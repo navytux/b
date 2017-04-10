@@ -41,6 +41,7 @@ func (p *btTpool) get(cmp Cmp) *Tree {
 	x.cmp = cmp
 	x.hitIdx = -1
 	x.hitPi = -1
+	x.hitMaxKInf = true
 	return x
 }
 
@@ -106,6 +107,9 @@ type (
 		hitIdx int
 		hitP   *x
 		hitPi  int
+
+		hitMaxK    interface{} /*K*/
+		hitMaxKInf bool // whether hitMaxK = ∞
 	}
 
 	xe struct { // x element
@@ -435,8 +439,12 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
-		// in hit range: < p.k (which is ∞ when pi == p.c)
-		if p != nil && pi < p.c && t.cmp(k, p.x[pi].k) >= 0 {
+		// // in hit range: < p.k (which is ∞ when pi == p.c)
+		// if p != nil && pi < p.c && t.cmp(k, p.x[pi].k) >= 0 {
+		// 	return -1, false
+		// }
+
+		if !(t.hitMaxKInf || t.cmp(k, t.hitMaxK) < 0) {
 			return -1, false
 		}
 
@@ -626,36 +634,37 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
-	//defer func() {
-	//	//if r := recover(); r != nil {
-	//	//	panic(r)
-	//	//}
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	dbg("--- PRE Set(%v, %v)\t(%v @%d, %v/%v, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitMaxKInf, t.hitMaxK, t.hitP, t.hitPi, t.dump())
+	defer func() {
+		//if r := recover(); r != nil {
+		//	panic(r)
+		//}
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
-		dd, p, pi := t.hit, t.hitP, t.hitPi
+		//dd, p, pi := t.hit, t.hitP, t.hitPi
+		dd := t.hit
 
 		switch {
 		case ok:
-			//dbg("ok'")
+			dbg("ok'")
 			dd.d[i].v = v
 			t.hitIdx = i
 			return
 
 		case dd.c < 2*kd:
-			//dbg("insert'")
+			dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
-		case p == nil || p.c <= 2*kx:
-			//dbg("overflow'")
-			t.overflow(p, dd, pi, i, k, v)
-			return
+		//case p == nil || p.c <= 2*kx:
+		//	dbg("overflow'")
+		//	t.overflow(p, dd, pi, i, k, v)
+		//	return
 
 		default:
 			// here: need to overflow but p.c > 2*kx -> need to do
@@ -669,11 +678,14 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	q := t.r
 
 	if q == nil {
-		//dbg("empty")
+		dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
 	}
+
+	var maxK interface{} /*K*/	// XXX max key limiting found hit range
+	maxKInf := true // if there will be no limiting factors ... XXX
 
 	for {
 		i, ok = t.find(q, k)
@@ -682,32 +694,47 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			if x.c > 2*kx {
 				x, i = t.splitX(p, x, pi, i)
 			}
-			p = x
 			if ok {
 				pi = i + 1
-				q = x.x[i+1].ch
 			} else {
 				pi = i
-				q = x.x[i].ch
+			}
+
+			p = x
+			q = p.x[pi].ch
+
+			if pi < p.c {
+				maxK = p.x[pi].k
+				maxKInf = false
+			}
+			if maxK != nil && maxKInf {
+				dbg("", pi, maxK)
+				panic(maxK)
 			}
 
 		case *d:
 			// data page found - perform the update
 			switch {
 			case ok:
-				//dbg("ok")
+				dbg("ok")
 				x.d[i].v = v
 				t.hit, t.hitIdx = x, i
 				t.hitP, t.hitPi = p, pi
+				t.hitMaxK = maxK
+				t.hitMaxKInf = maxKInf
 
 			case x.c < 2*kd:
-				//dbg("insert")
+				dbg("insert")
 				t.insert(x, i, k, v)
 				t.hitP, t.hitPi = p, pi
+				t.hitMaxK = maxK
+				t.hitMaxKInf = maxKInf
 
 			default:
-				//dbg("overflow")
+				dbg("overflow")
 				t.overflow(p, x, pi, i, k, v)
+				t.hitMaxK = maxK
+				t.hitMaxKInf = maxKInf
 			}
 
 			return
