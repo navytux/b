@@ -670,13 +670,13 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hit, t.hitIdx, t.hitKmin, t.hitKmax, t.dump())
-	defer func() {
-		//if r := recover(); r != nil {
-		//	panic(r)
-		//}
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hit, t.hitIdx, t.hitKmin, t.hitKmax, t.dump())
+	//defer func() {
+	//	//if r := recover(); r != nil {
+	//	//	panic(r)
+	//	//}
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
@@ -714,7 +714,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	q := t.r
 
 	if q == nil {
-		dbg("empty")
+		//dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
