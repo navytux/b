@@ -415,12 +415,11 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	return l, false
 }
 
-// hitTest returns whether k belongs to previosly hit data page XXX text
+// hitFind returns whether k belongs to previosly hit data page XXX text
 // if no  -1, false is returned
 // if yes returned are:
 // - i:  index corresponding to data entry in t.hit with min(k' : k' >= k)
 // - ok: whether k' == k
-// XXX -> hitFind
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 	hit := t.hit
 	if hit == nil {
@@ -502,7 +501,6 @@ func (t *Tree) Get(k interface{} /*K*/) (v interface{} /*V*/, ok bool) {
 }
 
 func (t *Tree) insert(q *d, i int, k interface{} /*K*/, v interface{} /*V*/) *d {
-	// TODO update hit
 	t.ver++
 	c := q.c
 	if i < c {
@@ -512,6 +510,8 @@ func (t *Tree) insert(q *d, i int, k interface{} /*K*/, v interface{} /*V*/) *d 
 	q.c = c
 	q.d[i].k, q.d[i].v = k, v
 	t.c++
+	t.hit = d
+	t.hitIdx = i
 	return q
 }
 
@@ -532,12 +532,14 @@ func (t *Tree) Len() int {
 
 func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
+	t.hitP = p
 	l, r := p.siblings(pi)
 
 	if l != nil && l.c < 2*kd && i != 0 {
 		l.mvL(q, 1)
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
+		t.hitPi = pi
 		return
 	}
 
@@ -546,11 +548,13 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 			q.mvR(r, 1)
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
+			t.hitPi = pi
 			return
 		}
 
 		t.insert(r, 0, k, v)
 		p.x[pi].k = k
+		t.hitPi = pi + 1
 		return
 	}
 
@@ -660,15 +664,18 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	}
 
 	// data page found - perform the update
-	if ok {
+	switch {
+	case ok:
 		dd.d[i].v = v
-	} else {
-		switch {
-		case dd.c < 2*kd:
-			t.insert(dd, i, k, v)
-		default:
-			t.overflow(p, dd, pi, i, k, v)
-		}
+		t.hit, t.hitIdx = dd, i
+		t.hitP, t.hitPi = p, pi
+
+	case dd.c < 2*kd:
+		t.insert(dd, i, k, v)
+		t.hitP, t.hitPi = p, pi
+
+	default:
+		t.overflow(p, dd, pi, i, k, v)
 	}
 }
 
@@ -778,6 +785,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	if i > kd {
 		done = true
 		t.insert(r, i-kd, k, v)
+		t.hitPi = pi + 1
 	}
 	if pi >= 0 {
 		p.insert(pi, r.d[0].k, r)
@@ -789,6 +797,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	}
 
 	t.insert(q, i, k, v)
+	t.hitPi = pi
 }
 
 func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
