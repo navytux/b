@@ -27,6 +27,7 @@ var caller = func(s string, va ...interface{}) {
 }
 
 func dbg(s string, va ...interface{}) {
+	return
 	if s == "" {
 		s = strings.Repeat("%v ", len(va))
 	}
@@ -234,7 +235,7 @@ func TestSetGet1(t *testing.T) {
 		for i := range a {
 			a[i] = (i ^ x) << 1
 		}
-		//dbg("", a)
+		dbg("", a)
 		for i, k := range a {
 			set(k, k^x)
 			if g, e := r.Len(), i+1; g != e {
