@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	//kx = 2 //TODO benchmark tune this number if using custom key/value type(s).
-	//kd = 2 //TODO benchmark tune this number if using custom key/value type(s).
+	//kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	kx = 2
+	kd = 2
 )
 
 func init() {
@@ -39,6 +39,8 @@ type btTpool struct{ sync.Pool }
 func (p *btTpool) get(cmp Cmp) *Tree {
 	x := p.Get().(*Tree)
 	x.cmp = cmp
+	x.hitIdx = -1
+	x.hitPi = -1
 	return x
 }
 
@@ -510,7 +512,7 @@ func (t *Tree) insert(q *d, i int, k interface{} /*K*/, v interface{} /*V*/) *d 
 	q.c = c
 	q.d[i].k, q.d[i].v = k, v
 	t.c++
-	t.hit = d
+	t.hit = q
 	t.hitIdx = i
 	return q
 }
@@ -532,18 +534,19 @@ func (t *Tree) Len() int {
 
 func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
-	t.hitP = p
 	l, r := p.siblings(pi)
 
 	if l != nil && l.c < 2*kd && i != 0 {
 		l.mvL(q, 1)
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
+		t.hitP = p
 		t.hitPi = pi
 		return
 	}
 
 	if r != nil && r.c < 2*kd {
+		t.hitP = p
 		if i < 2*kd {
 			q.mvR(r, 1)
 			t.insert(q, i, k, v)
@@ -616,10 +619,13 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
-	//defer func() {
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
+	defer func() {
+		//if r := recover(); r != nil {
+		//	panic(r)
+		//}
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 	pi := -1
 	var p *x
@@ -634,6 +640,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	} else {
 		q := t.r
 		if q == nil {
+			dbg("empty")
 			z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 			t.r, t.first, t.last = z, z, z
 			return
@@ -666,15 +673,18 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	// data page found - perform the update
 	switch {
 	case ok:
+		dbg("ok")
 		dd.d[i].v = v
 		t.hit, t.hitIdx = dd, i
 		t.hitP, t.hitPi = p, pi
 
 	case dd.c < 2*kd:
+		dbg("insert")
 		t.insert(dd, i, k, v)
 		t.hitP, t.hitPi = p, pi
 
 	default:
+		dbg("overflow")
 		t.overflow(p, dd, pi, i, k, v)
 	}
 }
@@ -781,23 +791,22 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	}
 	q.c = kd
 	r.c = kd
-	var done bool
-	if i > kd {
-		done = true
-		t.insert(r, i-kd, k, v)
-		t.hitPi = pi + 1
-	}
+
 	if pi >= 0 {
 		p.insert(pi, r.d[0].k, r)
 	} else {
-		t.r = newX(q).insert(0, r.d[0].k, r)
+		p = newX(q).insert(0, r.d[0].k, r)
+		t.r = p
 	}
-	if done {
-		return
-	}
+	t.hitP = p
 
-	t.insert(q, i, k, v)
-	t.hitPi = pi
+	if i > kd {
+		t.insert(r, i-kd, k, v)
+		t.hitPi = pi + 1
+	} else {
+		t.insert(q, i, k, v)
+		t.hitPi = pi
+	}
 }
 
 func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
