@@ -293,10 +293,10 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // Delete removes the k's KV pair, if it exists, in which case Delete returns
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
-	dbg("--- PRE Delete(%v)\n%s", k, t.dump())
-	defer func() {
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//dbg("--- PRE Delete(%v)\n%s", k, t.dump())
+	//defer func() {
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	// TODO audit for hit update
 	pi := -1
@@ -398,6 +398,7 @@ func (t *Tree) find(q interface{}, k interface{} /*K*/) (i int, ok bool) {
 	return l, false
 }
 
+// same as find but when we pre-know range to search and for data-page only
 func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	for l <= h {
 		m := (l + h) >> 1
@@ -414,23 +415,32 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	return l, false
 }
 
-// hitTest returns whether k belongs to previosly hit data page
-// if yes index corresponding to data entry with min(k' : k' >= k) is returned
-// XXX -> -1, false (no hit)
-func (t *Tree) hitTest(k interface{} /*K*/) (i int, ok bool) {
+// hitTest returns whether k belongs to previosly hit data page XXX text
+// if no  -1, false is returned
+// if yes returned are:
+// - i:  index corresponding to data entry in t.hit with min(k' : k' >= k)
+// - ok: whether k' == k
+// XXX -> hitFind
+func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 	hit := t.hit
 	if hit == nil {
 		return -1, false
 	}
 
 	i = t.hitIdx
+	p := t.hitP
+	pi := t.hitPi
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
-		if t.hitP != nil && t.cmp(k, t.hitP.x[t.hitPi].k) >= 0 {
+		// in hit range: < p.k (which is ∞ when pi == p.c)
+		if p != nil && pi < p.c && t.cmp(k, p.x[pi].k) >= 0 {
 			return -1, false
 		}
 
+		return t.find2(hit, k, i+1, hit.c - 1)
+
+		/*
 		h := hit.c - 1
 		l := i
 		if l < h {
@@ -438,9 +448,11 @@ func (t *Tree) hitTest(k interface{} /*K*/) (i int, ok bool) {
 		}
 
 		return t.find2(hit, k, l, h)
+		*/
 
 	case cmp < 0:
-		if t.hitP != nil && t.hitPi > 0 && t.cmp(k, t.hitP.x[t.hitPi-1].k) < 0 {
+		// in hit range: >= pprev.k
+		if p != nil && pi > 0 && t.cmp(k, p.x[pi-1].k) < 0 {
 			return -1, false
 		}
 
@@ -600,30 +612,49 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	dbg("--- PRE Set(%v, %v)\n%s", k, v, t.dump())
-	defer func() {
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//dbg("--- PRE Set(%v, %v)\t(%v @%d, %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitP, t.hitPi, t.dump())
+	//defer func() {
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	pi := -1
 	var p *x
+	var dd *d // XXX naming
 	q := t.r
 	if q == nil {
-		z := t.insert(btDPool.Get().(*d), 0, k, v)
+		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
 	}
 
 	// check if we can do the update nearby previous change
-	i, ok := t.hitTest(k)
+	i, ok := t.hitFind(k)
 	if i >= 0 {
-		q, p, pi = t.hit, t.hitP, t.hitPi
-		goto found
+		println("NEVER")
+		println("NEVER")
+		println("NEVER")
+		dd, p, pi = t.hit, t.hitP, t.hitPi
 	}
 
 	for {
+		// data page found
+		if dd != nil {
+			if ok {
+				dd.d[i].v = v
+			} else {
+				switch {
+				case dd.c < 2*kd:
+					t.insert(dd, i, k, v)
+				default:
+					t.overflow(p, dd, pi, i, k, v)
+				}
+			}
+
+			return
+		}
+
+		// data page not found yet - sarch and descent
 		i, ok = t.find(q, k)
-	found:
 		if ok {
 			switch x := q.(type) {
 			case *x:
@@ -633,17 +664,10 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				pi = i + 1
 				p = x
 				q = x.x[i+1].ch
-				continue
 			case *d:
-				// update hit
-				t.hit = x
-				t.hitIdx = i
-				t.hitP = p
-				t.hitPi = pi
-
-				x.d[i].v = v
+				dd = x
 			}
-			return
+			continue
 		}
 
 		switch x := q.(type) {
@@ -655,14 +679,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			p = x
 			q = x.x[i].ch
 		case *d:
-			switch {
-			// XXX update hit (all inside ?)
-			case x.c < 2*kd:
-				t.insert(x, i, k, v)
-			default:
-				t.overflow(p, x, pi, i, k, v)
-			}
-			return
+			dd = x
 		}
 	}
 }
