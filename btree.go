@@ -162,6 +162,7 @@ func (q *x) extract(i int) {
 }
 
 func (q *x) insert(i int, k interface{} /*K*/, ch interface{}) *x {
+	dbg("X.insert %v @%d", q, i)
 	c := q.c
 	if i < c {
 		q.x[c+1].ch = q.x[c].ch
@@ -542,6 +543,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		p.x[pi-1].k = q.d[0].k
 		t.hitP = p
 		t.hitPi = pi
+		t.checkHitP(q)
 		return
 	}
 
@@ -552,12 +554,17 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
 			t.hitPi = pi
+			t.checkHitP(q)
 			return
 		}
 
 		t.insert(r, 0, k, v)
 		p.x[pi].k = k
 		t.hitPi = pi + 1
+		t.checkHitP(r)
+		if p.x[t.hitPi].ch != r {
+			panic(p.x)
+		}
 		return
 	}
 
@@ -634,6 +641,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
+		dbg("HIT FOUND\t-> %d, %v", i, ok)
 		dd, p, pi = t.hit, t.hitP, t.hitPi
 
 	// data page not quickly found - search and descent from root
@@ -773,6 +781,19 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 	}
 }
 
+func (t *Tree) checkHitP(q *d) {
+	p := t.hitP
+	pi := t.hitPi
+	if p.x[t.hitPi].ch != q {
+		println()
+		dbg("BUG: HITP MISMATCH:")
+		dbg("hitP: %v  @%d", p, pi)
+		dbg("q: %p", q)
+		println()
+		panic(0)
+	}
+}
+
 func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	r := btDPool.Get().(*d)
@@ -796,6 +817,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 		p.insert(pi, r.d[0].k, r)
 	} else {
 		p = newX(q).insert(0, r.d[0].k, r)
+		pi = 0
 		t.r = p
 	}
 	t.hitP = p
@@ -803,9 +825,11 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	if i > kd {
 		t.insert(r, i-kd, k, v)
 		t.hitPi = pi + 1
+		t.checkHitP(r)
 	} else {
 		t.insert(q, i, k, v)
 		t.hitPi = pi
+		t.checkHitP(q)
 	}
 }
 
