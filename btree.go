@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	//kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	//kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	kx = 2 //TODO benchmark tune this number if using custom key/value type(s).
-	kd = 2 //TODO benchmark tune this number if using custom key/value type(s).
+	kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kx = 2 //TODO benchmark tune this number if using custom key/value type(s).
+	//kd = 2 //TODO benchmark tune this number if using custom key/value type(s).
 )
 
 func init() {
@@ -620,66 +620,54 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	pi := -1
 	var p *x
 	var dd *d // XXX naming
-	q := t.r
-	if q == nil {
-		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
-		t.r, t.first, t.last = z, z, z
-		return
-	}
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		println("NEVER")
-		println("NEVER")
-		println("NEVER")
 		dd, p, pi = t.hit, t.hitP, t.hitPi
-	}
 
-	for {
-		// data page found
-		if dd != nil {
-			if ok {
-				dd.d[i].v = v
-			} else {
-				switch {
-				case dd.c < 2*kd:
-					t.insert(dd, i, k, v)
-				default:
-					t.overflow(p, dd, pi, i, k, v)
-				}
-			}
-
+	// data page not found yet - search and descent
+	} else {
+		q := t.r
+		if q == nil {
+			z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
+			t.r, t.first, t.last = z, z, z
 			return
 		}
 
-		// data page not found yet - sarch and descent
-		i, ok = t.find(q, k)
-		if ok {
+	loop:
+		for {
+			i, ok = t.find(q, k)
 			switch x := q.(type) {
 			case *x:
 				if x.c > 2*kx {
 					x, i = t.splitX(p, x, pi, i)
 				}
-				pi = i + 1
 				p = x
-				q = x.x[i+1].ch
+				if ok {
+					pi = i + 1
+					q = x.x[i+1].ch
+				} else {
+					pi = i
+					q = x.x[i].ch
+				}
+
 			case *d:
 				dd = x
+				break loop
 			}
-			continue
 		}
+	}
 
-		switch x := q.(type) {
-		case *x:
-			if x.c > 2*kx {
-				x, i = t.splitX(p, x, pi, i)
-			}
-			pi = i
-			p = x
-			q = x.x[i].ch
-		case *d:
-			dd = x
+	// data page found - perform the update
+	if ok {
+		dd.d[i].v = v
+	} else {
+		switch {
+		case dd.c < 2*kd:
+			t.insert(dd, i, k, v)
+		default:
+			t.overflow(p, dd, pi, i, k, v)
 		}
 	}
 }
