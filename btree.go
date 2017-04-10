@@ -641,30 +641,30 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v/%v, %v/%v), %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitMinKMInf, t.hitMinK, t.hitMaxKInf, t.hitMaxK, t.hitP, t.hitPi, t.dump())
-	defer func() {
-		//if r := recover(); r != nil {
-		//	panic(r)
-		//}
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v/%v, %v/%v), %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitMinKMInf, t.hitMinK, t.hitMaxKInf, t.hitMaxK, t.hitP, t.hitPi, t.dump())
+	//defer func() {
+	//	//if r := recover(); r != nil {
+	//	//	panic(r)
+	//	//}
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		dbg("hit found\t-> %d, %v", i, ok)
+		//dbg("hit found\t-> %d, %v", i, ok)
 		//dd, p, pi := t.hit, t.hitP, t.hitPi
 		dd := t.hit
 
 		switch {
 		case ok:
-			dbg("ok'")
+			//dbg("ok'")
 			dd.d[i].v = v
 			t.hitIdx = i
 			return
 
 		case dd.c < 2*kd:
-			dbg("insert'")
+			//dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
@@ -733,7 +733,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			// data page found - perform the update
 			switch {
 			case ok:
-				dbg("ok")
+				//dbg("ok")
 				x.d[i].v = v
 				t.hit, t.hitIdx = x, i
 				t.hitP, t.hitPi = p, pi
@@ -743,7 +743,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				t.hitMaxKInf = maxKInf
 
 			case x.c < 2*kd:
-				dbg("insert")
+				//dbg("insert")
 				t.insert(x, i, k, v)
 				t.hitP, t.hitPi = p, pi
 				t.hitMinK = minK
@@ -752,7 +752,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				t.hitMaxKInf = maxKInf
 
 			default:
-				dbg("overflow")
+				//dbg("overflow")
 				t.overflow(p, x, pi, i, k, v)
 				t.hitMinK = minK
 				t.hitMinKMInf = minKMInf
