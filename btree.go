@@ -619,14 +619,14 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 	pi := -1
 	var p *x
-	var dd *d // XXX naming
+	var dd *d
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		dd, p, pi = t.hit, t.hitP, t.hitPi
 
-	// data page not found yet - search and descent
+	// data page not quickly found - search and descent from root
 	} else {
 		q := t.r
 		if q == nil {
