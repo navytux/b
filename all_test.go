@@ -226,15 +226,15 @@ func TestSetGet1(t *testing.T) {
 	//const N = 21
 	const N = 41
 	//for _, x := range []int{0, -1, 0x555555, 0xaaaaaa, 0x333333, 0xcccccc, 0x314159} {
-	//for _, x := range []int{0x314159} {
-	for _, x := range []int{0} {
+	for _, x := range []int{0x314159} {
+	//for _, x := range []int{0} {
 		r := TreeNew(cmp)
 		set := r.Set
 		a := make([]int, N)
 		for i := range a {
 			a[i] = (i ^ x) << 1
 		}
-		dbg("", a)
+		//dbg("", a)
 		for i, k := range a {
 			set(k, k^x)
 			if g, e := r.Len(), i+1; g != e {
