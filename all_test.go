@@ -598,7 +598,8 @@ func TestDelete0(t *testing.T) {
 }
 
 func TestDelete1(t *testing.T) {
-	const N = 130000
+	//const N = 130000
+	const N = 40
 	for _, x := range []int{0, -1, 0x555555, 0xaaaaaa, 0x333333, 0xcccccc, 0x314159} {
 		r := TreeNew(cmp)
 		set := r.Set
@@ -607,7 +608,7 @@ func TestDelete1(t *testing.T) {
 			a[i] = (i ^ x) << 1
 		}
 		for _, k := range a {
-			set(k, 0)
+			set(k, k)
 		}
 
 		for i, k := range a {

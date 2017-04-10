@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	kx = 2 //TODO benchmark tune this number if using custom key/value type(s).
+	kd = 2 //TODO benchmark tune this number if using custom key/value type(s).
 )
 
 func init() {
@@ -95,6 +97,13 @@ type (
 		last  *d
 		r     interface{}
 		ver   int64
+
+		// last data page which Set/Put/Delete/XXX recheck modified
+		// XXX naming
+		hit    *d
+		hitIdx int
+		hitP   *x
+		hitPi  int
 	}
 
 	xe struct { // x element
@@ -208,6 +217,7 @@ func (t *Tree) Clear() {
 
 	clr(t.r)
 	t.c, t.first, t.last, t.r = 0, nil, nil, nil
+	// TODO reset .hit
 	t.ver++
 }
 
@@ -220,6 +230,7 @@ func (t *Tree) Close() {
 }
 
 func (t *Tree) cat(p *x, q, r *d, pi int) {
+	// FIXME update hit (called from Delete -> underflow )
 	t.ver++
 	q.mvL(r, r.c)
 	if r.n != nil {
@@ -282,6 +293,12 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // Delete removes the k's KV pair, if it exists, in which case Delete returns
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
+	dbg("--- PRE Delete(%v)\n%s", k, t.dump())
+	defer func() {
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
+
+	// TODO audit for hit update
 	pi := -1
 	var p *x
 	q := t.r
@@ -304,15 +321,15 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 				ok = false
 				continue
 			case *d:
-				t.extract(x, i)
+				t.extract(x, i)		// hit
 				if x.c >= kd {
 					return true
 				}
 
 				if q != t.r {
-					t.underflow(p, x, pi)
+					t.underflow(p, x, pi)	// hit
 				} else if t.c == 0 {
-					t.Clear()
+					t.Clear()	// hit
 				}
 				return true
 			}
@@ -327,12 +344,13 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			p = x
 			q = x.x[i].ch
 		case *d:
-			return false
+			return false	// hit
 		}
 	}
 }
 
 func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
+	// XXX update hit ?
 	t.ver++
 	//r = q.d[i].v // prepared for Extract
 	q.c--
@@ -380,6 +398,59 @@ func (t *Tree) find(q interface{}, k interface{} /*K*/) (i int, ok bool) {
 	return l, false
 }
 
+func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
+	for l <= h {
+		m := (l + h) >> 1
+		mk := d.d[m].k
+		switch cmp := t.cmp(k, mk); {
+		case cmp > 0:
+			l = m + 1
+		case cmp == 0:
+			return m, true
+		default:
+			h = m - 1
+		}
+	}
+	return l, false
+}
+
+// hitTest returns whether k belongs to previosly hit data page
+// if yes index corresponding to data entry with min(k' : k' >= k) is returned
+// XXX -> -1, false (no hit)
+func (t *Tree) hitTest(k interface{} /*K*/) (i int, ok bool) {
+	hit := t.hit
+	if hit == nil {
+		return -1, false
+	}
+
+	i = t.hitIdx
+
+	switch cmp := t.cmp(k, hit.d[i].k); {
+	case cmp > 0:
+		if t.hitP != nil && t.cmp(k, t.hitP.x[t.hitPi].k) >= 0 {
+			return -1, false
+		}
+
+		h := hit.c - 1
+		l := i
+		if l < h {
+			l++
+		}
+
+		return t.find2(hit, k, l, h)
+
+	case cmp < 0:
+		if t.hitP != nil && t.hitPi > 0 && t.cmp(k, t.hitP.x[t.hitPi-1].k) < 0 {
+			return -1, false
+		}
+
+		return t.find2(hit, k, 0, i)
+
+	default:
+		return i, true;
+	}
+}
+
 // First returns the first item of the tree in the key collating order, or
 // (zero-value, zero-value) if the tree is empty.
 func (t *Tree) First() (k interface{} /*K*/, v interface{} /*V*/) {
@@ -419,6 +490,7 @@ func (t *Tree) Get(k interface{} /*K*/) (v interface{} /*V*/, ok bool) {
 }
 
 func (t *Tree) insert(q *d, i int, k interface{} /*K*/, v interface{} /*V*/) *d {
+	// TODO update hit
 	t.ver++
 	c := q.c
 	if i < c {
@@ -528,10 +600,10 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\n%s", k, v, t.dump())
-	//defer func() {
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	dbg("--- PRE Set(%v, %v)\n%s", k, v, t.dump())
+	defer func() {
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 	pi := -1
 	var p *x
@@ -542,8 +614,16 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		return
 	}
 
+	// check if we can do the update nearby previous change
+	i, ok := t.hitTest(k)
+	if i >= 0 {
+		q, p, pi = t.hit, t.hitP, t.hitPi
+		goto found
+	}
+
 	for {
-		i, ok := t.find(q, k)
+		i, ok = t.find(q, k)
+	found:
 		if ok {
 			switch x := q.(type) {
 			case *x:
@@ -555,6 +635,12 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				q = x.x[i+1].ch
 				continue
 			case *d:
+				// update hit
+				t.hit = x
+				t.hitIdx = i
+				t.hitP = p
+				t.hitPi = pi
+
 				x.d[i].v = v
 			}
 			return
@@ -570,6 +656,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			q = x.x[i].ch
 		case *d:
 			switch {
+			// XXX update hit (all inside ?)
 			case x.c < 2*kd:
 				t.insert(x, i, k, v)
 			default:
@@ -609,6 +696,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 		return
 	}
 
+	// TODO handle t.hit
+
 	for {
 		i, ok := t.find(q, k)
 		if ok {
@@ -628,6 +717,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 					return
 				}
 
+				// XXX update hit
+
 				x.d[i].v = newV
 			}
 			return
@@ -646,6 +737,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			if !written {
 				return
 			}
+
+			// XXX update hit
 
 			switch {
 			case x.c < 2*kd:
@@ -739,12 +832,14 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 
 	if l != nil && l.c+q.c >= 2*kd {
 		l.mvR(q, 1)
+		// TODO update t.hit = q @ i
 		p.x[pi-1].k = q.d[0].k
 		return
 	}
 
 	if r != nil && q.c+r.c >= 2*kd {
 		q.mvL(r, 1)
+		// TODO update t.hit = q @ i
 		p.x[pi].k = r.d[0].k
 		r.d[r.c] = zde // GC
 		return
