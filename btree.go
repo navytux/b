@@ -39,10 +39,10 @@ type btTpool struct{ sync.Pool }
 func (p *btTpool) get(cmp Cmp) *Tree {
 	x := p.Get().(*Tree)
 	x.cmp = cmp
-	x.hitIdx = -1
-	x.hitPi = -1
-	x.hitMinKMInf = true
-	x.hitMaxKInf = true
+	//x.hitIdx = -1
+	//x.hitPi = -1
+	//x.hitMinKMInf = true
+	//x.hitMaxKInf = true
 	return x
 }
 
@@ -104,15 +104,18 @@ type (
 
 		// last data page which Set/Put/Delete/XXX recheck modified
 		// XXX naming
-		hit    *d
-		hitIdx int
-		hitP   *x
-		hitPi  int
+		hit      *d
+		hitIdx   int
+		hitKmin  xkey
+		hitKmax  xkey
 
-		hitMinK     interface{} /*K*/
-		hitMinKMInf bool		// whether hitMinK = -∞
-		hitMaxK     interface{} /*K*/
-		hitMaxKInf  bool		// whether hitMaxK = +∞
+		//hitP   *x
+		//hitPi  int
+
+		//hitMinK     interface{} /*K*/
+		//hitMinKMInf bool		// whether hitMinK = -∞
+		//hitMaxK     interface{} /*K*/
+		//hitMaxKInf  bool		// whether hitMaxK = +∞
 	}
 
 	xe struct { // x element
@@ -123,6 +126,16 @@ type (
 	x struct { // index page
 		c int
 		x [2*kx + 2]xe
+	}
+
+	xkey struct { // key + whether value is present
+		k    interface {} /*K*/
+		kset bool         // if not set - k not present
+	}
+
+	keyrange struct { // key range [kmin, kmax)
+		kmin xkey // if not set = -∞
+		kmax xkey // if not set = +∞
 	}
 )
 
@@ -148,6 +161,11 @@ func clr(q interface{}) {
 		*x = zd
 		btDPool.Put(x)
 	}
+}
+
+func (xk *xkey) set(k interface{} /*K*/) {
+	xk.k = k
+	xk.kset = true
 }
 
 // -------------------------------------------------------------------------- x
@@ -447,7 +465,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 		// 	return -1, false
 		// }
 
-		if !(t.hitMaxKInf || t.cmp(k, t.hitMaxK) < 0) {
+		if !(t.hitKmax.kset && t.cmp(k, t.hitKmax.k) < 0) {
 			return -1, false
 		}
 
@@ -469,7 +487,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 		// 	return -1, false
 		// }
 
-		if !(t.hitMinKMInf || t.cmp(k, t.hitMinK) >= 0) {
+		if !(t.hitKmin.kset && t.cmp(k, t.hitKmin.k) >= 0) {
 			return -1, false
 		}
 
@@ -548,7 +566,7 @@ func (t *Tree) Len() int {
 	return t.c
 }
 
-func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
+func (t *Tree) overflow(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	l, r := p.siblings(pi)
 
@@ -556,34 +574,45 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		l.mvL(q, 1)
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
-		t.hitP = p
-		t.hitPi = pi
-		t.checkHitP(q)
+		t.hitKmin.set(q.d[0].k)
+
+		//t.hitP = p	// minK = q.d[0].k (= p.x[pi-1].k)
+		//t.hitPi = pi
+		//t.checkHitP(q)
 		return
 	}
 
 	if r != nil && r.c < 2*kd {
-		t.hitP = p
+		//t.hitP = p
 		if i < 2*kd {
 			q.mvR(r, 1)
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
-			t.hitPi = pi
-			t.checkHitP(q)
+			t.hitKmax.set(r.d[0].k)
+			//t.hitPi = pi	// maxK = r.d[0].k (= p.x[pi].k)
+			//t.checkHitP(q)
 			return
 		}
 
 		t.insert(r, 0, k, v)
 		p.x[pi].k = k
-		t.hitPi = pi + 1
-		t.checkHitP(r)
-		if p.x[t.hitPi].ch != r {
-			panic(p.x)
+
+		t.hitKmin.set(k)
+		kmax := hitKmaxPrev
+		if pi + 1 < p.c { // means < ∞
+			kmax.set(p.x[pi+1].k)
 		}
+		t.hitKmax = kmax
+
+		//t.hitPi = pi + 1
+		//t.checkHitP(r)
+		//if p.x[t.hitPi].ch != r {
+		//	panic(p.x)
+		//}
 		return
 	}
 
-	t.split(p, q, pi, i, k, v)
+	t.split(p, q, pi, i, hitKmaxPrev, k, v)
 }
 
 // Seek returns an Enumerator positioned on an item such that k >= item's key.
@@ -641,13 +670,13 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v/%v, %v/%v), %v @%d)\n%s", k, v, t.hit, t.hitIdx, t.hitMinKMInf, t.hitMinK, t.hitMaxKInf, t.hitMaxK, t.hitP, t.hitPi, t.dump())
-	//defer func() {
-	//	//if r := recover(); r != nil {
-	//	//	panic(r)
-	//	//}
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hit, t.hitIdx, t.hitKmin, t.hitKmax, t.dump())
+	defer func() {
+		//if r := recover(); r != nil {
+		//	panic(r)
+		//}
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
@@ -691,10 +720,12 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		return
 	}
 
-	var minK, maxK interface{} /*K*/	// XXX max key limiting found hit range
-	minKMInf, maxKInf := true, true // if there will be no limiting factors ... XXX
+	var hitKmin, hitKmax xkey // initially [-∞, +∞)
+	var hitKmaxPrev xkey      // hitKmax state @ prev iter
 
 	for {
+		hitKmaxPrev = hitKmax // XXX here? - recheck
+
 		i, ok = t.find(q, k)
 		switch x := q.(type) {
 		case *x:
@@ -710,54 +741,42 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			p = x
 			q = p.x[pi].ch
 
-			if pi > 0 {
-				minK = p.x[pi-1].k
-				minKMInf = false
+			if pi > 0 {	// XXX also check < p.c ?
+				hitKmin.set(p.x[pi-1].k)
 			}
 
 			if pi < p.c {
-				maxK = p.x[pi].k
-				maxKInf = false
+				hitKmax.set(p.x[pi].k)
 			}
 
-			if minK != nil && minKMInf {
-				dbg("MINK WRONG", pi, minK)
-				panic(minK)
+			if !((hitKmin.k != nil) == hitKmin.kset) {
+				dbg("MINK WRONG", pi, hitKmin)
+				panic(0)
 			}
-			if maxK != nil && maxKInf {
-				dbg("MAXK WRONG", pi, maxK)
-				panic(maxK)
+			if !((hitKmax.k != nil) == hitKmax.kset) {
+				dbg("MAXK WRONG", pi, hitKmax)
+				panic(0)
 			}
 
 		case *d:
 			// data page found - perform the update
+			t.hitKmin = hitKmin
+			t.hitKmax = hitKmax
+
 			switch {
 			case ok:
 				//dbg("ok")
 				x.d[i].v = v
 				t.hit, t.hitIdx = x, i
-				t.hitP, t.hitPi = p, pi
-				t.hitMinK = minK
-				t.hitMinKMInf = minKMInf
-				t.hitMaxK = maxK
-				t.hitMaxKInf = maxKInf
 
 			case x.c < 2*kd:
 				//dbg("insert")
 				t.insert(x, i, k, v)
-				t.hitP, t.hitPi = p, pi
-				t.hitMinK = minK
-				t.hitMinKMInf = minKMInf
-				t.hitMaxK = maxK
-				t.hitMaxKInf = maxKInf
 
 			default:
 				//dbg("overflow")
-				t.overflow(p, x, pi, i, k, v)
-				t.hitMinK = minK
-				t.hitMinKMInf = minKMInf
-				t.hitMaxK = maxK
-				t.hitMaxKInf = maxKInf
+				// NOTE overflow will correct hit-range as needed
+				t.overflow(p, x, pi, i, hitKmaxPrev, k, v)
 			}
 
 			return
@@ -843,13 +862,15 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			case x.c < 2*kd:
 				t.insert(x, i, k, newV)
 			default:
-				t.overflow(p, x, pi, i, k, newV)
+				//t.overflow(p, x, pi, i, k, newV)
+				panic("TODO")
 			}
 			return
 		}
 	}
 }
 
+/*
 func (t *Tree) checkHitP(q *d) {
 	p := t.hitP
 	pi := t.hitPi
@@ -862,8 +883,9 @@ func (t *Tree) checkHitP(q *d) {
 		panic(0)
 	}
 }
+*/
 
-func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
+func (t *Tree) split(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	r := btDPool.Get().(*d)
 	if q.n != nil {
@@ -889,16 +911,24 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 		pi = 0
 		t.r = p
 	}
-	t.hitP = p
+	//t.hitP = p
 
 	if i > kd {
 		t.insert(r, i-kd, k, v)
-		t.hitPi = pi + 1
-		t.checkHitP(r)
+		t.hitKmin.set(p.x[pi].k)
+		kmax := hitKmaxPrev
+		if pi + 1 < p.c {
+			kmax.set(p.x[pi+1].k)
+		}
+		t.hitKmax = kmax
+
+		//t.hitPi = pi + 1	// minK = p.x[pi].k; maxK = derive-up(p.x[pi+1].k)
+		//t.checkHitP(r)
 	} else {
 		t.insert(q, i, k, v)
-		t.hitPi = pi
-		t.checkHitP(q)
+		t.hitKmax.set(r.d[0].k)
+		//t.hitPi = pi		// maxK = r.d[0].k (= p.x[pi].k XXX recheck)
+		//t.checkHitP(q)
 	}
 }
 

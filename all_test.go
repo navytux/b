@@ -223,11 +223,12 @@ func TestSetGet0(t *testing.T) {
 }
 
 func TestSetGet1(t *testing.T) {
-	const N = 40000
+	//const N = 40000
 	//const N = 21
 	//const N = 41
-	for _, x := range []int{0, -1, 0x555555, 0xaaaaaa, 0x333333, 0xcccccc, 0x314159} {
-	//for _, x := range []int{0x314159} {
+	const N = 320
+	//for _, x := range []int{0, -1, 0x555555, 0xaaaaaa, 0x333333, 0xcccccc, 0x314159} {
+	for _, x := range []int{0x314159} {
 	//for _, x := range []int{0} {
 		r := TreeNew(cmp)
 		set := r.Set
@@ -246,7 +247,7 @@ func TestSetGet1(t *testing.T) {
 		for i, k := range a {
 			v, ok := r.Get(k)
 			if !ok {
-				t.Fatal(i, k, v, ok)
+				t.Fatal(i, k, v, ok)		// XXX bug here
 			}
 
 			if g, e := v.(int), k^x; g != e {
@@ -272,7 +273,7 @@ func TestSetGet1(t *testing.T) {
 			}
 
 			if g, e := v.(int), k^x+42; g != e {
-				t.Fatal(i, g, e)		// XXX bug here
+				t.Fatal(i, g, e)
 			}
 
 			k |= 1
