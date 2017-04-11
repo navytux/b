@@ -204,14 +204,21 @@ loop:
 
 
 		case *d:
-			switch {
-			case op == opSet && !ok:
-				bad("key %v not found after set", k)
+			switch op {
+			case opSet:
+				if !ok {
+					bad("key %v not found after set", k)
+				}
 
-			case op == opDel && ok:
-				bad("key %v found after delete", k)
+			case opDel:
+				if ok {
+					bad("key %v found after delete", k)
+				}
 
-				// XXX adjust i to be in range for opDel
+				// delted last element or tried to delete element past max k in x
+				if i >= x.c {
+					i = x.c - 1
+				}
 			}
 
 			dd = x

@@ -323,7 +323,11 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		switch {
 		case !ok:
 			dbg("ok'")
-			t.hitDi = i // XXX ok ? (i > h)
+			if i >= dd.c {
+				// tried to delete element past max k in hitD
+				i = dd.c - 1
+			}
+			t.hitDi = i
 			return false
 
 		case dd.c > kd:
