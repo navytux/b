@@ -308,6 +308,7 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	//dbg("--- PRE Delete(%v)\n%s", k, t.dump())
+	defer t.checkHit(k)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -686,21 +687,20 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			//hitPKmax = hitKmax
 
 			if x.c > 2*kx {
-				//x, i = t.splitX(p, x, pi, i)
 				//dbg("splitX")
 				x, i, p, pi = t.splitX(p, x, pi, i)
 
 				// NOTE splitX changes p which means hit
 				// Kmin/Kmax/PKmax have to be recomputed
 				if pi >= 0 && pi < p.c {
-					hitPKmax.set(p.x[pi].k) // XXX wrong vs oo and not oo above
+					hitPKmax.set(p.x[pi].k)
 					//dbg("hitPKmax X: %v", hitPKmax)
 					hitKmax = hitPKmax
 					//dbg("hitKmax X: %v", hitKmax)
 				}
 
 				if pi > 0 {
-					hitKmin.set(p.x[pi-1].k)	// XXX also recheck vs above
+					hitKmin.set(p.x[pi-1].k)
 					//dbg("hitKmin X: %v", hitKmin)
 				}
 			} else {
