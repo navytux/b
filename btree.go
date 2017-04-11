@@ -309,7 +309,7 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	//dbg("--- PRE Delete(%v)\n%s", k, t.dump())
-	//defer t.checkHit(k, opDel)
+	defer t.checkHit(k, opDel)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -318,17 +318,34 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
-		//dd := t.hitD
+		dd := t.hitD
 
 		switch {
 		case !ok:
 			t.hitDi = i // XXX ok ? (i > h)
 			return false
 
+		case dd.c > kd:
+			t.extract(dd, i)
+			return true
+
 		// here: need to extract / underflow but check to not underflow too much XXX
 		// (no underflowX must be called ?)
 		default:
-			// TODO
+			p, pi := t.hitP, t.hitPi
+			if p.c < kx && p != t.r {	// XXX recheck	&& p != nil ?
+				break
+			}
+
+			t.extract(dd, i)
+
+			// XXX recheck
+			if p != nil {
+				t.underflow(p, dd, pi)
+			} else if t.c == 0 {
+				t.Clear()
+			}
+			return true
 		}
 	}
 
@@ -341,16 +358,20 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		return false
 	}
 
-	//var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	//var hitPKmax xkey         // Kmax for whole hitP
+	var hitKmin, hitKmax xkey // initially [-∞, +∞)
+	var hitPKmax xkey         // Kmax for whole hitP
 
 
 	for {
 		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			hitPKmax = hitKmax
+
 			if x.c < kx && q != t.r {
 				x, i = t.underflowX(p, x, pi, i)
+
+				// TODO Kmin/Kmax/PKmax correct after underflowX
 			}
 
 			p = x
@@ -360,8 +381,27 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 			q = x.x[pi].ch
 
+			if pi > 0 {
+				hitKmin.set(p.x[pi-1].k)
+				//dbg("hitKmin: %v", hitKmin)
+			}
+
+			if pi < p.c { // == p.c means ∞
+				hitKmax.set(p.x[pi].k)
+				//dbg("hitKmax: %v", hitKmax)
+			}
+
 		case *d:
+			// data page found - perform the delete
+			t.hitP = p
+			t.hitPi = pi
+			t.hitKmin = hitKmin
+			t.hitKmax = hitKmax
+			t.hitPKmax = hitPKmax
+
 			if !ok {
+				t.hitD = x
+				t.hitDi = i
 				return false
 			}
 
@@ -371,7 +411,8 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 
 			if q != t.r {
-				t.underflow(p, x, pi)	// hit
+				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
+				t.underflow(p, x, pi)
 			} else if t.c == 0 {
 				t.Clear()
 			}
@@ -646,7 +687,7 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v)  PKmax: %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
-	//defer t.checkHit(k, opSet)
+	defer t.checkHit(k, opSet)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -980,7 +1021,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	// hitD/hitDi stays unchanged
 	kmax := t.hitPKmax
 	if pi < p.c { // means < ∞
-		kmax.set(p.x[pi].k
+		kmax.set(p.x[pi].k)
 	}
 	t.hitKmax = kmax
 	t.hitPi = pi
