@@ -105,9 +105,9 @@ type (
 		hitDi    int
 		hitP     *x   // parent & pos for data page (= -1 if no parent)
 		hitPi    int
-		hitKmin  xkey // data page key range is [hitKmin, hitKmax)
+		hitKmin  xkey // data page allowed key range is [hitKmin, hitKmax)
 		hitKmax  xkey
-		hitPKmax xkey // Kmax for whole hitP
+		hitPKmax xkey // allowed Kmax for whole hitP
 	}
 
 	xe struct { // x element
@@ -174,7 +174,6 @@ func (q *x) extract(i int) {
 }
 
 func (q *x) insert(i int, k interface{} /*K*/, ch interface{}) *x {
-	//dbg("X.insert %v @%d", q, i)
 	c := q.c
 	if i < c {
 		q.x[c+1].ch = q.x[c].ch
@@ -430,9 +429,9 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	return l, false
 }
 
-// hitFind returns whether k belongs to previosly hit data page XXX text
-// if no  -1, false is returned
-// if yes returned are:
+// hitFind returns k position in previosly hit data page
+// if k should not reside in hit range: -1, false is returned
+// othrewise returns are:
 // - i:  index corresponding to data entry in t.hitD with min(k' : k' >= k)
 // - ok: whether k' == k
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
@@ -442,39 +441,20 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 	}
 
 	i = t.hitDi
-	//p := t.hitP
-	//pi := t.hitPi
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
-		// // in hit range: < p.k (which is ∞ when pi == p.c)
-		// if p != nil && pi < p.c && t.cmp(k, p.x[pi].k) >= 0 {
-		// 	return -1, false
-		// }
-
 		if !(t.hitKmax.kset && t.cmp(k, t.hitKmax.k) < 0) {
+			// >= hitKmax
 			return -1, false
 		}
 
 		return t.find2(hit, k, i+1, hit.c - 1)
 
-		/*
-		h := hit.c - 1
-		l := i
-		if l < h {
-			l++
-		}
-
-		return t.find2(hit, k, l, h)
-		*/
 
 	case cmp < 0:
-		// // in hit range: >= pprev.k
-		// if p != nil && pi > 0 && t.cmp(k, p.x[pi-1].k) < 0 {
-		// 	return -1, false
-		// }
-
 		if !(t.hitKmin.kset && t.cmp(k, t.hitKmin.k) >= 0) {
+			// < hitKmin
 			return -1, false
 		}
 
