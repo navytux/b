@@ -656,7 +656,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		// cause upper level overflow (splitX) -> we cannot overflow here -
 		// - need to do the usual scan from root to split index pages.
 		default:
-			//break
 			p, pi := t.hitP, t.hitPi
 			if p == nil || p.c <= 2*kx {
 				//dbg("overflow'")
@@ -671,8 +670,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	var p *x
 	q := t.r
 	if q == nil {
-		//dbg("empty")
-		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
+		// XXX or just init to empty and jump to general case
+		z := t.insert(btDPool.Get().(*d), 0, k, v)
 		t.r, t.first, t.last = z, z, z
 		return
 	}
