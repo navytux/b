@@ -39,7 +39,7 @@ type btTpool struct{ sync.Pool }
 func (p *btTpool) get(cmp Cmp) *Tree {
 	x := p.Get().(*Tree)
 	x.cmp = cmp
-	//x.hitIdx = -1
+	//x.hitDi = -1
 	//x.hitPi = -1
 	//x.hitMinKMInf = true
 	//x.hitMaxKInf = true
@@ -104,8 +104,8 @@ type (
 
 		// last data page which Set/Put/Delete/XXX recheck modified
 		// XXX naming
-		hit      *d
-		hitIdx   int
+		hitD     *d
+		hitDi    int
 		hitKmin  xkey
 		hitKmax  xkey
 
@@ -128,15 +128,15 @@ type (
 		x [2*kx + 2]xe
 	}
 
-	xkey struct { // key + whether value is present
+	xkey struct { // key + whether value is present at all
 		k    interface {} /*K*/
 		kset bool         // if not set - k not present
 	}
 
-	keyrange struct { // key range [kmin, kmax)
-		kmin xkey // if not set = -∞
-		kmax xkey // if not set = +∞
-	}
+	//keyrange struct { // key range [kmin, kmax)
+	//	kmin xkey // if not set = -∞
+	//	kmax xkey // if not set = +∞
+	//}
 )
 
 var ( // R/O zero values
@@ -245,7 +245,7 @@ func (t *Tree) Clear() {
 
 	clr(t.r)
 	t.c, t.first, t.last, t.r = 0, nil, nil, nil
-	// TODO reset .hit
+	// TODO reset .hitD
 	t.ver++
 }
 
@@ -446,15 +446,15 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 // hitFind returns whether k belongs to previosly hit data page XXX text
 // if no  -1, false is returned
 // if yes returned are:
-// - i:  index corresponding to data entry in t.hit with min(k' : k' >= k)
+// - i:  index corresponding to data entry in t.hitD with min(k' : k' >= k)
 // - ok: whether k' == k
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
-	hit := t.hit
+	hit := t.hitD
 	if hit == nil {
 		return -1, false
 	}
 
-	i = t.hitIdx
+	i = t.hitDi
 	//p := t.hitP
 	//pi := t.hitPi
 
@@ -546,8 +546,8 @@ func (t *Tree) insert(q *d, i int, k interface{} /*K*/, v interface{} /*V*/) *d 
 	q.c = c
 	q.d[i].k, q.d[i].v = k, v
 	t.c++
-	t.hit = q
-	t.hitIdx = i
+	t.hitD = q
+	t.hitDi = i
 	return q
 }
 
@@ -670,7 +670,7 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hit, t.hitIdx, t.hitKmin, t.hitKmax, t.dump())
+	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.dump())
 	//defer func() {
 	//	//if r := recover(); r != nil {
 	//	//	panic(r)
@@ -682,14 +682,14 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
-		//dd, p, pi := t.hit, t.hitP, t.hitPi
-		dd := t.hit
+		//dd, p, pi := t.hitD, t.hitP, t.hitPi
+		dd := t.hitD
 
 		switch {
 		case ok:
 			//dbg("ok'")
 			dd.d[i].v = v
-			t.hitIdx = i
+			t.hitDi = i
 			return
 
 		case dd.c < 2*kd:
@@ -697,6 +697,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			t.insert(dd, i, k, v)
 			return
 
+		// XXX reenable overflow here
 		//case p == nil || p.c <= 2*kx:
 		//	dbg("overflow'")
 		//	t.overflow(p, dd, pi, i, k, v)
@@ -712,7 +713,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	pi := -1
 	var p *x
 	q := t.r
-
 	if q == nil {
 		//dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
@@ -767,7 +767,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			case ok:
 				//dbg("ok")
 				x.d[i].v = v
-				t.hit, t.hitIdx = x, i
+				t.hitD, t.hitDi = x, i
 
 			case x.c < 2*kd:
 				//dbg("insert")
@@ -782,7 +782,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			return
 		}
 	}
-
 }
 
 // Put combines Get and Set in a more efficient way where the tree is walked
@@ -814,7 +813,7 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 		return
 	}
 
-	// TODO handle t.hit
+	// TODO handle t.hitD
 
 	for {
 		i, ok := t.find(q, k)
@@ -978,14 +977,14 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 
 	if l != nil && l.c+q.c >= 2*kd {
 		l.mvR(q, 1)
-		// TODO update t.hit = q @ i
+		// TODO update t.hitD = q @ i
 		p.x[pi-1].k = q.d[0].k
 		return
 	}
 
 	if r != nil && q.c+r.c >= 2*kd {
 		q.mvL(r, 1)
-		// TODO update t.hit = q @ i
+		// TODO update t.hitD = q @ i
 		p.x[pi].k = r.d[0].k
 		r.d[r.c] = zde // GC
 		return
