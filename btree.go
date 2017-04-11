@@ -339,7 +339,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		// (no underflowX must be called ?)
 		default:
 			p, pi := t.hitP, t.hitPi
-			if p.c < kx && p != t.r {	// XXX recheck	&& p != nil ?
+			if p != nil && p.c < kx && p != t.r {
 				break
 			}
 
@@ -408,7 +408,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 
 			if !ok {
 				t.hitD = x
-				t.hitDi = i
+				t.hitDi = i	// XXX vs > h ?
 				return false
 			}
 
@@ -438,7 +438,10 @@ func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
 	q.d[q.c] = zde // GC
 	t.c--
 	t.hitD = q
-	t.hitDi = i	// XXX ok (pointing post data ?)
+	if i >= q.c {
+		i--
+	}
+	t.hitDi = i
 	return
 }
 
