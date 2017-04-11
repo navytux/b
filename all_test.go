@@ -140,114 +140,88 @@ func (t *Tree) dump() string {
 	return s
 }
 
+// rescan t from root and check that hit D, P, Kmin/Kmax and rest all match what they should
 func (t *Tree) checkHit(k interface{} /*K*/) {
-		badHappenned := false
-		bad := func(s string, va ...interface{}) {
-			dbg(s, va...)
-			badHappenned = true
-		}
+	wrong := false
+	bad := func(s string, va ...interface{}) {
+		dbg(s, va...)
+		wrong = true
+	}
 
-		//println()
+	q := t.r
+	var p *x
+	pi := -1
+	var dd *d
+	var i int
+	var ok bool
 
-		if t.hitDi >= 0 {
-			if t.hitD.d[t.hitDi].k != k {
-				bad("hitD invalid: %v @%v", t.hitD, t.hitDi)
+	var hitKmin, hitKmax xkey
+	var hitPKmax xkey
+
+loop:
+	// here he tree is immutable while we are rescanning it, which means
+	// the logic to get hitKmin/hitKmax & friends is simpler compared to
+	// that in Set when splitX may occurr.
+	for {
+		i, ok = t.find(q, k)
+		switch x := q.(type) {
+		case *x:
+			hitPKmax = hitKmax
+
+			p = x
+			pi = i
+			if ok {
+				pi++
 			}
-		}
 
-		if t.hitPi >= 0 {
-			if t.hitP.x[t.hitPi].ch != t.hitD {
-				bad("hitP invalid: %v @%v", t.hitP, t.hitPi)
+			q = p.x[pi].ch
+			if pi > 0 {
+				hitKminPrev := hitKmin
+				hitKmin.set(p.x[pi-1].k)
+
+				if hitKminPrev.kset && t.cmp(hitKmin.k, hitKminPrev.k) <= 0 {
+					bad("hitKmin not ↑: %v -> %v", hitKminPrev.k, hitKmin.k)
+				}
 			}
-		}
 
-		// rescan from root and check Kmin/Kmax and rest
-		q := t.r
-		var p *x
-		pi := -1
-		var dd *d
-		var i int
-		var ok bool
+			if pi < p.c { // pi = p.c means k = ∞
+				hitKmax.set(p.x[pi].k)
 
-		var hitKmin, hitKmax xkey
-		var hitPKmax xkey
-
-		//dbg("k: %v", k)
-	loop:
-		for {
-			//dbg("p: %p:  @%d %v", p, pi, p)
-			//dbg("q: %p:  %v", q, q)
-			i, ok = t.find(q, k)
-			//dbg("\t-> %v, %v", i, ok)
-			switch x := q.(type) {
-			case *x:
-				hitPKmax = hitKmax	// XXX recheck
-
-				p = x
-				pi = i
-				if ok {
-					pi++
+				if hitPKmax.kset && t.cmp(hitKmax.k, hitPKmax.k) >= 0 {
+					bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
 				}
-				//dbg("\tpi -> %v", pi)
-
-				q = p.x[pi].ch
-				if pi > 0 {
-					hitKminPrev := hitKmin
-					hitKmin.set(p.x[pi-1].k)
-
-					if hitKminPrev.kset && t.cmp(hitKmin.k, hitKminPrev.k) <= 0 {
-						bad("hitKmin not ↑: %v -> %v", hitKminPrev.k, hitKmin.k)
-					}
-				}
-
-				if pi < p.c {
-					//dbg("", p.x, pi)
-					hitKmax.set(p.x[pi].k)	// XXX not sure or x[pi+1] ?
-
-					if hitPKmax.kset && t.cmp(hitKmax.k, hitPKmax.k) >= 0 {
-						bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
-					}
-				}
-
-
-			case *d:
-				if !ok {
-					bad("key %v not found after set", k)
-				}
-
-				dd = x
-				break loop
 			}
-		}
 
-		if hitKmin != t.hitKmin {
-			bad("hitKmin mismatch:  %v  ; want %v", t.hitKmin, hitKmin)
-		}
 
-		if hitKmax != t.hitKmax {
-			bad("hitKmax mismatch:  %v  ; want %v", t.hitKmax, hitKmax)
-		}
+		case *d:
+			if !ok {
+				bad("key %v not found after set", k)
+			}
 
-		if hitPKmax != t.hitPKmax {
-			bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
+			dd = x
+			break loop
 		}
+	}
 
-		if dd != t.hitD || i != t.hitDi {
-			bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
-		}
+	if !(hitKmin == t.hitKmin && hitKmax == t.hitKmax) {
+		bad("hitK mismatch:  [%v, %v)  ; want [%v, %v)", t.hitKmin, t.hitKmax, hitKmin, hitKmax)
+	}
 
-		if p != t.hitP || pi != t.hitPi {
-			bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
-		}
+	if hitPKmax != t.hitPKmax {
+		bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
+	}
 
-		//v2, ok := t.Get(k)
-		//if !ok || v2 != v {
-		//	bad("get(%v) -> %v, %v; want %v, %v", k, v2, ok, v, true)
-		//}
+	if dd != t.hitD || i != t.hitDi {
+		bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
+	}
 
-		if badHappenned {
-			panic(0)
-		}
+	if p != t.hitP || pi != t.hitPi {
+		bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
+	}
+
+	if wrong {
+		panic(0)
+	}
 }
 
 func rng() *mathutil.FC32 {
