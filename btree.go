@@ -124,11 +124,6 @@ type (
 		k    interface {} /*K*/
 		kset bool         // if not set - k not present
 	}
-
-	//keyrange struct { // key range [kmin, kmax)
-	//	kmin xkey // if not set = -∞
-	//	kmax xkey // if not set = +∞
-	//}
 )
 
 var ( // R/O zero values
@@ -568,7 +563,6 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
 		t.hitPi = pi	// XXX already pre-set this way
-		t.checkHitP(q)
 		return
 	}
 
@@ -579,7 +573,6 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 			p.x[pi].k = r.d[0].k
 			t.hitKmax.set(r.d[0].k)
 			t.hitPi = pi	// XXX already pre-set this way
-			t.checkHitP(q)
 			return
 		}
 
@@ -593,7 +586,6 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		}
 		t.hitKmax = kmax
 		t.hitPi = pi + 1
-		t.checkHitP(r)
 		return
 	}
 
@@ -653,9 +645,6 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 	return btEPool.get(nil, true, q.c-1, q.d[q.c-1].k, q, t, t.ver), nil
 }
 
-// verify that t.hit* are computed ok
-// XXX -> all_test
-
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v)  PKmax: %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
@@ -683,13 +672,13 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			t.insert(dd, i, k, v)
 			return
 
-		// here: need to overflow but we have to check: if overflowing
-		// would cause upper level overflow -> we cannot overflow here -
+		// here: need to overflow but we have to check: if overflowing would
+		// cause upper level overflow (splitX) -> we cannot overflow here -
 		// - need to do the usual scan from root to split index pages.
 		default:
 			//break
 			p, pi := t.hitP, t.hitPi
-			if p == nil || p.c <= 2*kx {	// XXX < vs <=
+			if p == nil || p.c <= 2*kx {
 				//dbg("overflow'")
 				t.overflow(p, dd, pi, i, k, v)
 				return
@@ -749,12 +738,12 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			q = p.x[pi].ch
 
-			if pi > 0 {	// XXX also check < p.c ?
+			if pi > 0 {
 				hitKmin.set(p.x[pi-1].k)
 				//dbg("hitKmin: %v", hitKmin)
 			}
 
-			if pi < p.c {
+			if pi < p.c { // == p.c means ∞
 				hitKmax.set(p.x[pi].k)
 				//dbg("hitKmax: %v", hitKmax)
 			}
@@ -876,19 +865,6 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 	}
 }
 
-func (t *Tree) checkHitP(q *d) {
-	p := t.hitP
-	pi := t.hitPi
-	if p.x[t.hitPi].ch != q {
-		println()
-		dbg("BUG: HITP MISMATCH:")
-		dbg("hitP: %v  @%d", p, pi)
-		dbg("q: %p", q)
-		println()
-		panic(0)
-	}
-}
-
 func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	r := btDPool.Get().(*d)
@@ -926,12 +902,10 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 		}
 		t.hitKmax = kmax
 		t.hitPi = pi + 1
-		t.checkHitP(r)
 	} else {
 		t.insert(q, i, k, v)
 		t.hitKmax.set(r.d[0].k)
 		t.hitPi = pi	// XXX already pre-set so
-		t.checkHitP(q)
 	}
 }
 
