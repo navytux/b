@@ -107,7 +107,7 @@ type (
 		hitPi    int
 		hitKmin  xkey // data page key range is [hitKmin, hitKmax)
 		hitKmax  xkey
-		hitPKmax xkey // Kmax for hit range one level up XXX text
+		hitPKmax xkey // Kmax for whole hitP
 	}
 
 	xe struct { // x element
@@ -655,10 +655,109 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.dump())
-	//defer func() {
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v)  PKmax: %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	defer func() {
+		badHappenned := false
+		bad := func(s string, va ...interface{}) {
+			dbg(s, va...)
+			badHappenned = true
+		}
+
+		println()
+
+		if t.hitDi >= 0 {
+			if t.hitD.d[t.hitDi].k != k {
+				bad("hitD invalid: %v @%v", t.hitD, t.hitDi)
+			}
+		}
+
+		if t.hitPi >= 0 {
+			if t.hitP.x[t.hitPi].ch != t.hitD {
+				bad("hitP invalid: %v @%v", t.hitP, t.hitPi)
+			}
+		}
+
+		// rescan from root and check Kmin/Kmax and rest
+		q := t.r
+		var p *x
+		pi := -1
+		var dd *d
+		var i int
+		var ok bool
+
+		var hitKmin, hitKmax xkey
+		var hitPKmax xkey
+
+		//dbg("k: %v", k)
+	loop:
+		for {
+			//dbg("p: %p:  @%d %v", p, pi, p)
+			//dbg("q: %p:  %v", q, q)
+			i, ok = t.find(q, k)
+			//dbg("\t-> %v, %v", i, ok)
+			switch x := q.(type) {
+			case *x:
+				hitPKmax = hitKmax	// XXX recheck
+
+				p = x
+				pi = i
+				if ok {
+					pi++
+				}
+				//dbg("\tpi -> %v", pi)
+
+				q = p.x[pi].ch
+				if pi < p.c {
+					//dbg("", p.x, pi)
+					hitKmax.set(p.x[pi].k)	// XXX not sure or x[pi+1] ?
+
+					if hitPKmax.kset && t.cmp(hitKmax.k, hitPKmax.k) >= 0 {
+						bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
+					}
+				}
+
+
+			case *d:
+				if !ok {
+					bad("key %v not found after set", k)
+				}
+
+				dd = x
+				break loop
+			}
+		}
+
+		if dd != t.hitD || i != t.hitDi {
+			bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
+		}
+
+		if p != t.hitP || pi != t.hitPi {
+			bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
+		}
+
+		if hitKmax != t.hitKmax {
+			bad("hitKmax mismatch:  %v  ; want %v", t.hitKmax, hitKmax)
+		}
+
+		if hitPKmax != t.hitPKmax {
+			bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
+		}
+
+
+		v2, ok := t.Get(k)
+		if !ok || v2 != v {
+			bad("get(%v) -> %v, %v; want %v, %v", k, v2, ok, v, true)
+		}
+
+		if badHappenned {
+			panic(0)
+		}
+
+	}()
+	defer func() {
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
+
 
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
@@ -668,23 +767,24 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 		switch {
 		case ok:
-			//dbg("ok'")
+			dbg("ok'")
 			dd.d[i].v = v
 			t.hitDi = i
 			return
 
 		case dd.c < 2*kd:
-			//dbg("insert'")
+			dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
 		// here: need to overflow but we have to check: if overflowing
-		// would cause upper lever overflow -> we cannot overflow here -
+		// would cause upper level overflow -> we cannot overflow here -
 		// - need to do the usual scan from root to split index pages.
 		default:
+			//break
 			p, pi := t.hitP, t.hitPi
-			if p == nil || p.c <= 2*kx {
-				//dbg("overflow'")
+			if p == nil || p.c <= 2*kx {	// XXX < vs <=
+				dbg("overflow'")
 				t.overflow(p, dd, pi, i, k, v)
 				return
 			}
@@ -696,39 +796,48 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	var p *x
 	q := t.r
 	if q == nil {
-		//dbg("empty")
+		dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
 	}
 
 	var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	var hitPKmax xkey         // hitKmax state @ one level up
+	var hitPKmax xkey         // Kmax for whole hitP
 
 	for {
-		hitPKmax = hitKmax
-
 		i, ok = t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			//hitPKmax = hitKmax
+
 			if x.c > 2*kx {
-				x, i = t.splitX(p, x, pi, i)
+				//x, i = t.splitX(p, x, pi, i)
+				dbg("splitX")
+				x, i, p, pi = t.splitX(p, x, pi, i)
 			}
-			if ok {
-				pi = i + 1
-			} else {
-				pi = i
+
+			if pi >= 0 && pi < p.c {
+				hitPKmax.set(p.x[pi].k)
+				dbg("hitPKmax: %v", hitPKmax)
 			}
 
 			p = x
+			pi = i
+			if ok {
+				pi++
+			}
+
 			q = p.x[pi].ch
 
 			if pi > 0 {	// XXX also check < p.c ?
 				hitKmin.set(p.x[pi-1].k)
+				dbg("hitKmin: %v", hitKmin)
 			}
 
 			if pi < p.c {
 				hitKmax.set(p.x[pi].k)
+				dbg("hitKmax: %v", hitKmax)
 			}
 
 			if !((hitKmin.k != nil) == hitKmin.kset) {
@@ -750,16 +859,16 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			switch {
 			case ok:
-				//dbg("ok")
+				dbg("ok")
 				x.d[i].v = v
 				t.hitD, t.hitDi = x, i
 
 			case x.c < 2*kd:
-				//dbg("insert")
+				dbg("insert")
 				t.insert(x, i, k, v)
 
 			default:
-				//dbg("overflow")
+				dbg("overflow")
 				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
 				t.overflow(p, x, pi, i, k, v)
 			}
@@ -806,7 +915,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			switch x := q.(type) {
 			case *x:
 				if x.c > 2*kx {
-					x, i = t.splitX(p, x, pi, i)
+					panic("TODO")
+					x, i, _, _ = t.splitX(p, x, pi, i)
 				}
 				pi = i + 1
 				p = x
@@ -829,7 +939,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 		switch x := q.(type) {
 		case *x:
 			if x.c > 2*kx {
-				x, i = t.splitX(p, x, pi, i)
+				panic("TODO")
+				//x, i = t.splitX(p, x, pi, i)
 			}
 			pi = i
 			p = x
@@ -913,7 +1024,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	}
 }
 
-func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
+func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int, *x, int) {
 	t.ver++
 	r := btXPool.Get().(*x)
 	copy(r.x[:], q.x[kx+1:])
@@ -928,11 +1039,11 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 
 		switch {
 		case i < kx:
-			return q, i
+			return q, i, p, pi
 		case i == kx:
-			return p, pi
+			return p, pi, p, -1
 		default: // i > kx
-			return r, i - kx - 1
+			return r, i - kx - 1, p, pi + 1
 		}
 	}
 
@@ -945,11 +1056,11 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 
 	switch {
 	case i < kx:
-		return q, i
+		return q, i, nr, 0
 	case i == kx:
-		return nr, 0
+		return nr, 0, nr, -1
 	default: // i > kx
-		return r, i - kx - 1
+		return r, i - kx - 1, nr, 1
 	}
 }
 
