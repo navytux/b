@@ -673,13 +673,13 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 		switch {
 		case ok:
-			dbg("ok'")
+			//dbg("ok'")
 			dd.d[i].v = v
 			t.hitDi = i
 			return
 
 		case dd.c < 2*kd:
-			dbg("insert'")
+			//dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
@@ -690,7 +690,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			//break
 			p, pi := t.hitP, t.hitPi
 			if p == nil || p.c <= 2*kx {	// XXX < vs <=
-				dbg("overflow'")
+				//dbg("overflow'")
 				t.overflow(p, dd, pi, i, k, v)
 				return
 			}
@@ -702,7 +702,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	var p *x
 	q := t.r
 	if q == nil {
-		dbg("empty")
+		//dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
@@ -719,21 +719,21 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			if x.c > 2*kx {
 				//x, i = t.splitX(p, x, pi, i)
-				dbg("splitX")
+				//dbg("splitX")
 				x, i, p, pi = t.splitX(p, x, pi, i)
 
 				// NOTE splitX changes p which means hit
 				// Kmin/Kmax/PKmax have to be recomputed
 				if pi >= 0 && pi < p.c {
 					hitPKmax.set(p.x[pi].k) // XXX wrong vs oo and not oo above
-					dbg("hitPKmax X: %v", hitPKmax)
+					//dbg("hitPKmax X: %v", hitPKmax)
 					hitKmax = hitPKmax
-					dbg("hitKmax X: %v", hitKmax)
+					//dbg("hitKmax X: %v", hitKmax)
 				}
 
 				if pi > 0 {
 					hitKmin.set(p.x[pi-1].k)	// XXX also recheck vs above
-					dbg("hitKmin X: %v", hitKmin)
+					//dbg("hitKmin X: %v", hitKmin)
 				}
 			} else {
 				// p unchanged
@@ -751,12 +751,12 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			if pi > 0 {	// XXX also check < p.c ?
 				hitKmin.set(p.x[pi-1].k)
-				dbg("hitKmin: %v", hitKmin)
+				//dbg("hitKmin: %v", hitKmin)
 			}
 
 			if pi < p.c {
 				hitKmax.set(p.x[pi].k)
-				dbg("hitKmax: %v", hitKmax)
+				//dbg("hitKmax: %v", hitKmax)
 			}
 
 
@@ -770,16 +770,16 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			switch {
 			case ok:
-				dbg("ok")
+				//dbg("ok")
 				x.d[i].v = v
 				t.hitD, t.hitDi = x, i
 
 			case x.c < 2*kd:
-				dbg("insert")
+				//dbg("insert")
 				t.insert(x, i, k, v)
 
 			default:
-				dbg("overflow")
+				//dbg("overflow")
 				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
 				t.overflow(p, x, pi, i, k, v)
 			}

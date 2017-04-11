@@ -27,7 +27,6 @@ var caller = func(s string, va ...interface{}) {
 }
 
 func dbg(s string, va ...interface{}) {
-	return
 	if s == "" {
 		s = strings.Repeat("%v ", len(va))
 	}
