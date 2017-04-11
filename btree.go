@@ -707,6 +707,15 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				//dbg("\tpi -> %v", pi)
 
 				q = p.x[pi].ch
+				if pi > 0 {
+					hitKminPrev := hitKmin
+					hitKmin.set(p.x[pi-1].k)
+
+					if hitKminPrev.kset && t.cmp(hitKmin.k, hitKminPrev.k) <= 0 {
+						bad("hitKmin not ↑: %v -> %v", hitKminPrev.k, hitKmin.k)
+					}
+				}
+
 				if pi < p.c {
 					//dbg("", p.x, pi)
 					hitKmax.set(p.x[pi].k)	// XXX not sure or x[pi+1] ?
@@ -727,12 +736,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			}
 		}
 
-		if dd != t.hitD || i != t.hitDi {
-			bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
-		}
-
-		if p != t.hitP || pi != t.hitPi {
-			bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
+		if hitKmin != t.hitKmin {
+			bad("hitKmin mismatch:  %v  ; want %v", t.hitKmin, hitKmin)
 		}
 
 		if hitKmax != t.hitKmax {
@@ -743,6 +748,14 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
 		}
 
+
+		if dd != t.hitD || i != t.hitDi {
+			bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
+		}
+
+		if p != t.hitP || pi != t.hitPi {
+			bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
+		}
 
 		v2, ok := t.Get(k)
 		if !ok || v2 != v {
