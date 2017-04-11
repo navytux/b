@@ -376,7 +376,9 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			hitPKmax = hitKmax
 
 			if x.c < kx && q != t.r {
+				dbg("UNDERFLOWX\n\tp: %v @%d\n\tx: %v @%d", p, pi, x, i)
 				x, i, pi = t.underflowX(p, x, pi, i)
+				dbg("\n\t-> p: %v @%d\n\tx: %v @%d", p, pi, x, i)
 
 				// NOTE underflowX changes p which means hit
 				// Kmin/Kmax/PKmax have to be recomputed
