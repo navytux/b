@@ -828,11 +828,20 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				//x, i = t.splitX(p, x, pi, i)
 				dbg("splitX")
 				x, i, p, pi = t.splitX(p, x, pi, i)
-			}
 
-			if pi >= 0 && pi < p.c {
-				hitPKmax.set(p.x[pi].k)
-				dbg("hitPKmax: %v", hitPKmax)
+				// NOTE splitX changes p
+				if pi >= 0 && pi < p.c {
+					hitPKmax.set(p.x[pi].k)
+					dbg("hitPKmax X: %v", hitPKmax)
+				}
+
+				if pi > 0 {
+					hitKmin.set(p.x[pi-1].k)
+					dbg("hitKmin X: %v", hitKmin)
+				}
+			} else {
+				// p unchanged
+				hitPKmax = hitKmax
 			}
 
 			p = x
@@ -853,14 +862,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				dbg("hitKmax: %v", hitKmax)
 			}
 
-			if !((hitKmin.k != nil) == hitKmin.kset) {
-				dbg("MINK WRONG", pi, hitKmin)
-				panic(0)
-			}
-			if !((hitKmax.k != nil) == hitKmax.kset) {
-				dbg("MAXK WRONG", pi, hitKmax)
-				panic(0)
-			}
 
 		case *d:
 			// data page found - perform the update
