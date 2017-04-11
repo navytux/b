@@ -231,7 +231,8 @@ func (t *Tree) Clear() {
 
 	clr(t.r)
 	t.c, t.first, t.last, t.r = 0, nil, nil, nil
-	// TODO reset .hitD
+	t.hitD, t.hitDi, t.hitP, t.hitPi = nil, -1, nil, -1
+	t.hitKmin, t.hitKmax, t.hitPKmax = xkey{}, xkey{}, xkey{}
 	t.ver++
 }
 
@@ -314,7 +315,6 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	//}()
 
 	// check if we can do the delete nearby previous change
-	/*
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
@@ -326,11 +326,11 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			return false
 
 		// here: need to extract / underflow but check to not underflow too much XXX
+		// (no underflowX must be called ?)
 		default:
 			// TODO
 		}
 	}
-	*/
 
 	// data page not quickly found - search and descent from root
 	pi := -1
@@ -373,58 +373,14 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			if q != t.r {
 				t.underflow(p, x, pi)	// hit
 			} else if t.c == 0 {
-				t.Clear()	// hit
+				t.Clear()
 			}
 			return true
 		}
 	}
-
-
-
-/*
-		if ok {
-			switch x := q.(type) {
-			case *x:
-				if x.c < kx && q != t.r {
-					x, i = t.underflowX(p, x, pi, i)
-				}
-				pi = i + 1
-				p = x
-				q = x.x[pi].ch
-				ok = false
-				continue
-			case *d:
-				t.extract(x, i)
-				if x.c >= kd {
-					return true
-				}
-
-				if q != t.r {
-					t.underflow(p, x, pi)	// hit
-				} else if t.c == 0 {
-					t.Clear()	// hit
-				}
-				return true
-			}
-		}
-
-		switch x := q.(type) {
-		case *x:
-			if x.c < kx && q != t.r {
-				x, i = t.underflowX(p, x, pi, i)
-			}
-			pi = i
-			p = x
-			q = x.x[i].ch
-		case *d:
-			return false
-		}
-	}
-*/
 }
 
 func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
-	// XXX update hit
 	t.ver++
 	//r = q.d[i].v // prepared for Extract
 	q.c--
@@ -433,6 +389,8 @@ func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
 	}
 	q.d[q.c] = zde // GC
 	t.c--
+	t.hitD = q
+	t.hitDi = i	// XXX ok (pointing post data ?)
 	return
 }
 
@@ -695,7 +653,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 
 	// check if we can do the update nearby previous change
-	/*
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
@@ -725,7 +682,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			}
 		}
 	}
-	*/
 
 	// data page not quickly found - search and descent from root
 	pi := -1
@@ -994,25 +950,40 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 
 	if l != nil && l.c+q.c >= 2*kd {
 		l.mvR(q, 1)
-		// TODO update t.hitD = q @ i
 		p.x[pi-1].k = q.d[0].k
+		t.hitKmin.set(q.d[0].k)
+		t.hitPi = pi	// XXX? (+ already pre-set this way ?)
+		t.hitDi += 1
 		return
 	}
 
 	if r != nil && q.c+r.c >= 2*kd {
 		q.mvL(r, 1)
-		// TODO update t.hitD = q @ i
 		p.x[pi].k = r.d[0].k
+		t.hitKmax.set(r.d[0].k)
+		t.hitPi = pi	// XXX? (+ already pre-set this way ?)
+		// hitDi stays the same
 		r.d[r.c] = zde // GC
 		return
 	}
 
 	if l != nil {
+		t.hitD = l
+		t.hitDi += l.c
 		t.cat(p, l, q, pi-1)
+		t.hitKmin.set(p.x[pi-1].k)
+		t.hitPi = pi - 1
 		return
 	}
 
 	t.cat(p, q, r, pi)
+	// hitD/hitDi stays unchanged
+	kmax := t.hitPKmax
+	if pi < p.c { // means < ∞
+		kmax.set(p.x[pi].k
+	}
+	t.hitKmax = kmax
+	t.hitPi = pi
 }
 
 func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
