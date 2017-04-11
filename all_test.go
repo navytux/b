@@ -140,8 +140,14 @@ func (t *Tree) dump() string {
 	return s
 }
 
+type treeOp int
+const (
+	opSet treeOp = iota
+	opDel
+)
+
 // rescan t from root and check that hit D, P, Kmin/Kmax and rest all match what they should
-func (t *Tree) checkHit(k interface{} /*K*/) {
+func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	wrong := false
 	bad := func(s string, va ...interface{}) {
 		dbg(s, va...)
@@ -149,10 +155,9 @@ func (t *Tree) checkHit(k interface{} /*K*/) {
 	}
 
 	q := t.r
-	var p *x
-	pi := -1
 	var dd *d
-	var i int
+	var p *x
+	i, pi := -1, -1
 	var ok bool
 
 	var hitKmin, hitKmax xkey
@@ -163,6 +168,11 @@ loop:
 	// the logic to get hitKmin/hitKmax & friends is simpler compared to
 	// that in Set when splitX may occurr.
 	for {
+		// empty tree
+		if q == nil {
+			break
+		}
+
 		i, ok = t.find(q, k)
 		switch x := q.(type) {
 		case *x:
@@ -194,8 +204,14 @@ loop:
 
 
 		case *d:
-			if !ok {
+			switch {
+			case op == opSet && !ok:
 				bad("key %v not found after set", k)
+
+			case op == opDel && ok:
+				bad("key %v found after delete", k)
+
+				// XXX adjust i to be in range for opDel
 			}
 
 			dd = x
