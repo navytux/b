@@ -653,120 +653,13 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 	return btEPool.get(nil, true, q.c-1, q.d[q.c-1].k, q, t, t.ver), nil
 }
 
+// verify that t.hit* are computed ok
+// XXX -> all_test
+
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v)  PKmax: %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
-	defer func() {
-		badHappenned := false
-		bad := func(s string, va ...interface{}) {
-			dbg(s, va...)
-			badHappenned = true
-		}
-
-		//println()
-
-		if t.hitDi >= 0 {
-			if t.hitD.d[t.hitDi].k != k {
-				bad("hitD invalid: %v @%v", t.hitD, t.hitDi)
-			}
-		}
-
-		if t.hitPi >= 0 {
-			if t.hitP.x[t.hitPi].ch != t.hitD {
-				bad("hitP invalid: %v @%v", t.hitP, t.hitPi)
-			}
-		}
-
-		// rescan from root and check Kmin/Kmax and rest
-		q := t.r
-		var p *x
-		pi := -1
-		var dd *d
-		var i int
-		var ok bool
-
-		var hitKmin, hitKmax xkey
-		var hitPKmax xkey
-
-		//dbg("k: %v", k)
-	loop:
-		for {
-			//dbg("p: %p:  @%d %v", p, pi, p)
-			//dbg("q: %p:  %v", q, q)
-			i, ok = t.find(q, k)
-			//dbg("\t-> %v, %v", i, ok)
-			switch x := q.(type) {
-			case *x:
-				hitPKmax = hitKmax	// XXX recheck
-
-				p = x
-				pi = i
-				if ok {
-					pi++
-				}
-				//dbg("\tpi -> %v", pi)
-
-				q = p.x[pi].ch
-				if pi > 0 {
-					hitKminPrev := hitKmin
-					hitKmin.set(p.x[pi-1].k)
-
-					if hitKminPrev.kset && t.cmp(hitKmin.k, hitKminPrev.k) <= 0 {
-						bad("hitKmin not ↑: %v -> %v", hitKminPrev.k, hitKmin.k)
-					}
-				}
-
-				if pi < p.c {
-					//dbg("", p.x, pi)
-					hitKmax.set(p.x[pi].k)	// XXX not sure or x[pi+1] ?
-
-					if hitPKmax.kset && t.cmp(hitKmax.k, hitPKmax.k) >= 0 {
-						bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
-					}
-				}
-
-
-			case *d:
-				if !ok {
-					bad("key %v not found after set", k)
-				}
-
-				dd = x
-				break loop
-			}
-		}
-
-		if hitKmin != t.hitKmin {
-			bad("hitKmin mismatch:  %v  ; want %v", t.hitKmin, hitKmin)
-		}
-
-		if hitKmax != t.hitKmax {
-			bad("hitKmax mismatch:  %v  ; want %v", t.hitKmax, hitKmax)
-		}
-
-		if hitPKmax != t.hitPKmax {
-			bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
-		}
-
-
-		if dd != t.hitD || i != t.hitDi {
-			bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
-		}
-
-		if p != t.hitP || pi != t.hitPi {
-			bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
-		}
-
-		v2, ok := t.Get(k)
-		if !ok || v2 != v {
-			bad("get(%v) -> %v, %v; want %v, %v", k, v2, ok, v, true)
-		}
-
-		if badHappenned {
-			panic(0)
-		}
-
-	}()
+	defer t.checkHit(k)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -780,13 +673,13 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 		switch {
 		case ok:
-			//dbg("ok'")
+			dbg("ok'")
 			dd.d[i].v = v
 			t.hitDi = i
 			return
 
 		case dd.c < 2*kd:
-			//dbg("insert'")
+			dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
@@ -797,7 +690,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			//break
 			p, pi := t.hitP, t.hitPi
 			if p == nil || p.c <= 2*kx {	// XXX < vs <=
-				//dbg("overflow'")
+				dbg("overflow'")
 				t.overflow(p, dd, pi, i, k, v)
 				return
 			}
@@ -809,7 +702,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	var p *x
 	q := t.r
 	if q == nil {
-		//dbg("empty")
+		dbg("empty")
 		z := t.insert(btDPool.Get().(*d), 0, k, v) // XXX update hit
 		t.r, t.first, t.last = z, z, z
 		return
@@ -826,21 +719,25 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			if x.c > 2*kx {
 				//x, i = t.splitX(p, x, pi, i)
-				//dbg("splitX")
+				dbg("splitX")
 				x, i, p, pi = t.splitX(p, x, pi, i)
 
-				// NOTE splitX changes p
+				// NOTE splitX changes p which means hit
+				// Kmin/Kmax/PKmax have to be recomputed
 				if pi >= 0 && pi < p.c {
-					hitPKmax.set(p.x[pi].k)
-					//dbg("hitPKmax X: %v", hitPKmax)
+					hitPKmax.set(p.x[pi].k) // XXX wrong vs oo and not oo above
+					dbg("hitPKmax X: %v", hitPKmax)
+					hitKmax = hitPKmax
+					dbg("hitKmax X: %v", hitKmax)
 				}
 
 				if pi > 0 {
-					hitKmin.set(p.x[pi-1].k)
-					//dbg("hitKmin X: %v", hitKmin)
+					hitKmin.set(p.x[pi-1].k)	// XXX also recheck vs above
+					dbg("hitKmin X: %v", hitKmin)
 				}
 			} else {
 				// p unchanged
+				// FIXME move to above without else
 				hitPKmax = hitKmax
 			}
 
@@ -854,12 +751,12 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			if pi > 0 {	// XXX also check < p.c ?
 				hitKmin.set(p.x[pi-1].k)
-				//dbg("hitKmin: %v", hitKmin)
+				dbg("hitKmin: %v", hitKmin)
 			}
 
 			if pi < p.c {
 				hitKmax.set(p.x[pi].k)
-				//dbg("hitKmax: %v", hitKmax)
+				dbg("hitKmax: %v", hitKmax)
 			}
 
 
@@ -873,16 +770,16 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			switch {
 			case ok:
-				//dbg("ok")
+				dbg("ok")
 				x.d[i].v = v
 				t.hitD, t.hitDi = x, i
 
 			case x.c < 2*kd:
-				//dbg("insert")
+				dbg("insert")
 				t.insert(x, i, k, v)
 
 			default:
-				//dbg("overflow")
+				dbg("overflow")
 				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
 				t.overflow(p, x, pi, i, k, v)
 			}
