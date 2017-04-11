@@ -39,10 +39,8 @@ type btTpool struct{ sync.Pool }
 func (p *btTpool) get(cmp Cmp) *Tree {
 	x := p.Get().(*Tree)
 	x.cmp = cmp
-	//x.hitDi = -1
-	//x.hitPi = -1
-	//x.hitMinKMInf = true
-	//x.hitMaxKInf = true
+	x.hitDi = -1
+	x.hitPi = -1
 	return x
 }
 
@@ -102,20 +100,14 @@ type (
 		r     interface{}
 		ver   int64
 
-		// last data page which Set/Put/Delete/XXX recheck modified
-		// XXX naming
-		hitD     *d
+		// information about last data page which Set/Put/Delete modified
+		hitD     *d   // data page & pos of last write access
 		hitDi    int
-		hitKmin  xkey
+		hitP     *x   // parent & pos for data page (= -1 if no parent)
+		hitPi    int
+		hitKmin  xkey // data page key range is [hitKmin, hitKmax)
 		hitKmax  xkey
-
-		//hitP   *x
-		//hitPi  int
-
-		//hitMinK     interface{} /*K*/
-		//hitMinKMInf bool		// whether hitMinK = -∞
-		//hitMaxK     interface{} /*K*/
-		//hitMaxKInf  bool		// whether hitMaxK = +∞
+		hitPKmax xkey // Kmax for hit range one level up XXX text
 	}
 
 	xe struct { // x element
@@ -566,7 +558,7 @@ func (t *Tree) Len() int {
 	return t.c
 }
 
-func (t *Tree) overflow(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /*K*/, v interface{} /*V*/) {
+func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	l, r := p.siblings(pi)
 
@@ -575,22 +567,19 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
-
-		//t.hitP = p	// minK = q.d[0].k (= p.x[pi-1].k)
-		//t.hitPi = pi
-		//t.checkHitP(q)
+		t.hitPi = pi	// XXX already pre-set this way
+		t.checkHitP(q)
 		return
 	}
 
 	if r != nil && r.c < 2*kd {
-		//t.hitP = p
 		if i < 2*kd {
 			q.mvR(r, 1)
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
 			t.hitKmax.set(r.d[0].k)
-			//t.hitPi = pi	// maxK = r.d[0].k (= p.x[pi].k)
-			//t.checkHitP(q)
+			t.hitPi = pi	// XXX already pre-set this way
+			t.checkHitP(q)
 			return
 		}
 
@@ -598,21 +587,17 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /
 		p.x[pi].k = k
 
 		t.hitKmin.set(k)
-		kmax := hitKmaxPrev
+		kmax := t.hitPKmax
 		if pi + 1 < p.c { // means < ∞
 			kmax.set(p.x[pi+1].k)
 		}
 		t.hitKmax = kmax
-
-		//t.hitPi = pi + 1
-		//t.checkHitP(r)
-		//if p.x[t.hitPi].ch != r {
-		//	panic(p.x)
-		//}
+		t.hitPi = pi + 1
+		t.checkHitP(r)
 		return
 	}
 
-	t.split(p, q, pi, i, hitKmaxPrev, k, v)
+	t.split(p, q, pi, i, k, v)
 }
 
 // Seek returns an Enumerator positioned on an item such that k >= item's key.
@@ -672,9 +657,6 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v))\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.dump())
 	//defer func() {
-	//	//if r := recover(); r != nil {
-	//	//	panic(r)
-	//	//}
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
 
@@ -682,7 +664,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	i, ok := t.hitFind(k)
 	if i >= 0 {
 		//dbg("hit found\t-> %d, %v", i, ok)
-		//dd, p, pi := t.hitD, t.hitP, t.hitPi
 		dd := t.hitD
 
 		switch {
@@ -697,15 +678,16 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			t.insert(dd, i, k, v)
 			return
 
-		// XXX reenable overflow here
-		//case p == nil || p.c <= 2*kx:
-		//	dbg("overflow'")
-		//	t.overflow(p, dd, pi, i, k, v)
-		//	return
-
+		// here: need to overflow but we have to check: if overflowing
+		// would cause upper lever overflow -> we cannot overflow here -
+		// - need to do the usual scan from root to split index pages.
 		default:
-			// here: need to overflow but p.c > 2*kx -> need to do
-			// the usual scan to split index pages
+			p, pi := t.hitP, t.hitPi
+			if p == nil || p.c <= 2*kx {
+				//dbg("overflow'")
+				t.overflow(p, dd, pi, i, k, v)
+				return
+			}
 		}
 	}
 
@@ -721,10 +703,10 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	}
 
 	var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	var hitKmaxPrev xkey      // hitKmax state @ prev iter
+	var hitPKmax xkey         // hitKmax state @ one level up
 
 	for {
-		hitKmaxPrev = hitKmax // XXX here? - recheck
+		hitPKmax = hitKmax
 
 		i, ok = t.find(q, k)
 		switch x := q.(type) {
@@ -760,8 +742,11 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 		case *d:
 			// data page found - perform the update
+			t.hitP = p
+			t.hitPi = pi
 			t.hitKmin = hitKmin
 			t.hitKmax = hitKmax
+			t.hitPKmax = hitPKmax
 
 			switch {
 			case ok:
@@ -775,8 +760,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			default:
 				//dbg("overflow")
-				// NOTE overflow will correct hit-range as needed
-				t.overflow(p, x, pi, i, hitKmaxPrev, k, v)
+				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
+				t.overflow(p, x, pi, i, k, v)
 			}
 
 			return
@@ -869,7 +854,6 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 	}
 }
 
-/*
 func (t *Tree) checkHitP(q *d) {
 	p := t.hitP
 	pi := t.hitPi
@@ -882,9 +866,8 @@ func (t *Tree) checkHitP(q *d) {
 		panic(0)
 	}
 }
-*/
 
-func (t *Tree) split(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /*K*/, v interface{} /*V*/) {
+func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
 	t.ver++
 	r := btDPool.Get().(*d)
 	if q.n != nil {
@@ -909,25 +892,24 @@ func (t *Tree) split(p *x, q *d, pi, i int, hitKmaxPrev xkey, k interface{} /*K*
 		p = newX(q).insert(0, r.d[0].k, r)
 		pi = 0
 		t.r = p
+		t.hitP = p
 	}
-	//t.hitP = p
 
 	if i > kd {
 		t.insert(r, i-kd, k, v)
 		t.hitKmin.set(p.x[pi].k)
-		kmax := hitKmaxPrev
+		kmax := t.hitPKmax
 		if pi + 1 < p.c {
 			kmax.set(p.x[pi+1].k)
 		}
 		t.hitKmax = kmax
-
-		//t.hitPi = pi + 1	// minK = p.x[pi].k; maxK = derive-up(p.x[pi+1].k)
-		//t.checkHitP(r)
+		t.hitPi = pi + 1
+		t.checkHitP(r)
 	} else {
 		t.insert(q, i, k, v)
 		t.hitKmax.set(r.d[0].k)
-		//t.hitPi = pi		// maxK = r.d[0].k (= p.x[pi].k XXX recheck)
-		//t.checkHitP(q)
+		t.hitPi = pi	// XXX already pre-set so
+		t.checkHitP(q)
 	}
 }
 
