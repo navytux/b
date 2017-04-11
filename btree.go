@@ -308,24 +308,26 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // Delete removes the k's KV pair, if it exists, in which case Delete returns
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
-	//dbg("--- PRE Delete(%v)\n%s", k, t.dump())
+	dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v) PKmax: %v\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opDel)
-	//defer func() {
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	defer func() {
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 	// check if we can do the delete nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		//dbg("hit found\t-> %d, %v", i, ok)
+		dbg("hit found\t-> %d, %v", i, ok)
 		dd := t.hitD
 
 		switch {
 		case !ok:
+			dbg("ok'")
 			t.hitDi = i // XXX ok ? (i > h)
 			return false
 
 		case dd.c > kd:
+			dbg("extract'")
 			t.extract(dd, i)
 			return true
 
@@ -337,6 +339,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 				break
 			}
 
+			dbg("underflow'")
 			t.extract(dd, i)
 
 			// XXX recheck
@@ -503,7 +506,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
-		if !(t.hitKmax.kset && t.cmp(k, t.hitKmax.k) < 0) {
+		if t.hitKmax.kset && t.cmp(k, t.hitKmax.k) >= 0 {
 			// >= hitKmax
 			return -1, false
 		}
@@ -512,7 +515,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 
 
 	case cmp < 0:
-		if !(t.hitKmin.kset && t.cmp(k, t.hitKmin.k) >= 0) {
+		if t.hitKmin.kset && t.cmp(k, t.hitKmin.k) < 0 {
 			// < hitKmin
 			return -1, false
 		}
@@ -686,11 +689,11 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t(%v @%d, [%v, %v)  PKmax: %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  PKmax: %v\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opSet)
-	//defer func() {
-	//	dbg("--- POST\n%s\n====\n", t.dump())
-	//}()
+	defer func() {
+		dbg("--- POST\n%s\n====\n", t.dump())
+	}()
 
 
 	// check if we can do the update nearby previous change
