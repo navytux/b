@@ -519,7 +519,7 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 // hitFind returns k position in previosly hit data page
 // if k should not reside in hit range: -1, false is returned
 // othrewise returns are:
-// - i:  index corresponding to data entry in t.hitD with min(k' : k' >= k)
+// - i:  index corresponding to data entry in t.hitD with min(k' : k <= k')
 // - ok: whether k' == k
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 	hit := t.hitD
@@ -776,6 +776,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				//dbg("splitX")
 				x, i, p, pi = t.splitX(p, x, pi, i)
 
+				// FIXME move logic inside splitX
 				// NOTE splitX changes p which means hit
 				// Kmin/Kmax/PKmax have to be recomputed
 				if pi >= 0 && pi < p.c {
