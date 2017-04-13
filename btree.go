@@ -848,7 +848,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 
 		switch {
 		case ok:
-			newV, written = upd(dd.d[i].v, true)
+			oldV = dd.d[i].v
+			newV, written = upd(oldV, true)
 			if written {
 				dd.d[i].v = newV
 			}
@@ -924,7 +925,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 
 			switch {
 			case ok:
-				newV, written = upd(x.d[i].v, true)
+				oldV = x.d[i].v
+				newV, written = upd(oldV, true)
 				if written {
 					x.d[i].v = newV
 				}
