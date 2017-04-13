@@ -101,9 +101,9 @@ type (
 		ver   int64
 
 		// information about last data page which Set/Put/Delete modified
-		hitD     *d   // data page & pos of last write access
+		hitD     *d // data page & pos of last write access
 		hitDi    int
-		hitP     *x   // parent & pos for data page (= nil/-1 if no parent)
+		hitP     *x // parent & pos for data page (= nil/-1 if no parent)
 		hitPi    int
 		hitKmin  xkey // hitD allowed key range is [hitKmin, hitKmax)
 		hitKmax  xkey
@@ -122,8 +122,8 @@ type (
 	}
 
 	xkey struct { // key + whether value is present at all
-		k    interface {} /*K*/
-		kset bool         // if not set - k not present
+		k    interface{} /*K*/
+		kset bool        // if not set - k not present
 	}
 )
 
@@ -371,7 +371,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		return false
 	}
 
-	t.hitKmin, t.hitKmax = xkey{}, xkey{}	// initially [-∞, +∞)
+	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
 	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
 
 	for {
@@ -532,8 +532,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 			return -1, false
 		}
 
-		return t.find2(hit, k, i+1, hit.c - 1)
-
+		return t.find2(hit, k, i+1, hit.c-1)
 
 	case cmp < 0:
 		if t.hitKmin.kset && t.cmp(k, t.hitKmin.k) < 0 {
@@ -544,7 +543,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 		return t.find2(hit, k, 0, i)
 
 	default:
-		return i, true;
+		return i, true
 	}
 }
 
@@ -625,7 +624,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
-		t.hitPi = pi	// XXX already pre-set this way
+		t.hitPi = pi // XXX already pre-set this way
 		return
 	}
 
@@ -635,7 +634,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
 			t.hitKmax.set(r.d[0].k)
-			t.hitPi = pi	// XXX already pre-set this way
+			t.hitPi = pi // XXX already pre-set this way
 			return
 		}
 
@@ -644,7 +643,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 
 		t.hitKmin.set(k)
 		t.hitKmax = t.hitPKmax
-		if pi + 1 < p.c { // means < ∞
+		if pi+1 < p.c { // means < ∞
 			t.hitKmax.set(p.x[pi+1].k)
 		}
 		t.hitPi = pi + 1
@@ -715,7 +714,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
 
-
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
@@ -753,7 +751,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		return
 	}
 
-	t.hitKmin, t.hitKmax = xkey{}, xkey{}	// initially [-∞, +∞)
+	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
 	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
 
 	for {
@@ -783,7 +781,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			if pi < p.c { // k=+∞ @ pi=p.c
 				t.hitKmax.set(p.x[pi].k)
 			}
-
 
 		case *d:
 			// data page found - perform the update
@@ -928,7 +925,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 		t.insert(r, i-kd, k, v)
 		t.hitKmin.set(p.x[pi].k)
 		kmax := t.hitPKmax
-		if pi + 1 < p.c {
+		if pi+1 < p.c {
 			kmax.set(p.x[pi+1].k)
 		}
 		t.hitKmax = kmax
@@ -936,7 +933,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	} else {
 		t.insert(q, i, k, v)
 		t.hitKmax.set(r.d[0].k)
-		t.hitPi = pi	// XXX already pre-set so
+		t.hitPi = pi // XXX already pre-set so
 	}
 }
 
@@ -963,7 +960,7 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 		i -= kx + 1
 		t.hitKmin.set(p.x[pi].k)
 		t.hitKmax = t.hitPKmax
-		if pi + 1 < p.c { // means < ∞
+		if pi+1 < p.c { // means < ∞
 			t.hitKmax.set(p.x[pi+1].k)
 		}
 	} else {
@@ -982,7 +979,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		l.mvR(q, 1)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
-		t.hitPi = pi	// XXX? (+ already pre-set this way ?)
+		t.hitPi = pi // XXX? (+ already pre-set this way ?)
 		t.hitDi += 1
 		return
 	}
@@ -992,7 +989,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		q.mvL(r, 1)
 		p.x[pi].k = r.d[0].k
 		t.hitKmax.set(r.d[0].k)
-		t.hitPi = pi	// XXX? (+ already pre-set this way ?)
+		t.hitPi = pi // XXX? (+ already pre-set this way ?)
 		// hitDi stays the same
 		r.d[r.c] = zde // GC
 		return
@@ -1092,7 +1089,7 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 	t.catX(p, q, r, pi)
 	t.hitKmax = t.hitPKmax
 	if t.r != q && pi < p.c { // means < ∞
-		t.hitKmax.set(p.x[pi].k)	// XXX ok (was XXX wrong -> see cat handling in underflow)
+		t.hitKmax.set(p.x[pi].k) // XXX ok (was XXX wrong -> see cat handling in underflow)
 	}
 	return q, i
 }
