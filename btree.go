@@ -349,6 +349,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			t.extract(dd, i)
 
 			if p != nil {
+				// NOTE underflow corrects hit D,Di, P,Pi, Kmin, Kmax as needed
 				t.underflow(p, dd, pi)
 			} else if t.c == 0 {
 				t.Clear()
@@ -421,7 +422,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 
 			if x.c < kd {
 				if q != t.r {
-					// NOTE underflow will correct hit Kmin, Kmax, P and Pi as needed
+					// NOTE underflow corrects hit D,Di, P,Pi, Kmin, Kmax as needed
 					t.underflow(p, x, pi)
 				} else if t.c == 0 {
 					t.Clear()
@@ -980,28 +981,25 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	l, r := p.siblings(pi)
 
 	if l != nil && l.c+q.c >= 2*kd {
-		//dbg("\tunderflow -> mv-from-l")
 		l.mvR(q, 1)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
-		t.hitPi = pi // XXX? (+ already pre-set this way ?)
+		//t.hitPi = pi			already pre-set this way
 		t.hitDi += 1
 		return
 	}
 
 	if r != nil && q.c+r.c >= 2*kd {
-		//dbg("\tunderflow -> mv-from-r")
 		q.mvL(r, 1)
 		p.x[pi].k = r.d[0].k
 		t.hitKmax.set(r.d[0].k)
-		t.hitPi = pi // XXX? (+ already pre-set this way ?)
+		//t.hitPi = pi			already pre-set this way
 		// hitDi stays the same
 		r.d[r.c] = zde // GC
 		return
 	}
 
 	if l != nil {
-		//dbg("\tunderflow -> cat l <- q")
 		t.hitD = l
 		t.hitDi += l.c
 		pi--
@@ -1012,7 +1010,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 			t.hitP = nil
 			t.hitPi = -1
 		} else {
-			if pi > 0 {
+			if pi > 0 { // k=-∞ @-1
 				t.hitKmin.set(p.x[pi-1].k)
 			}
 			t.hitPi = pi
@@ -1020,7 +1018,6 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		return
 	}
 
-	//dbg("\tunderflow -> cat q <- r")
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
 	t.hitKmax = t.hitPKmax
@@ -1029,10 +1026,10 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		t.hitP = nil
 		t.hitPi = -1
 	} else {
-		if pi < p.c { // means < ∞
+		if pi < p.c { // k=+∞ @p.c
 			t.hitKmax.set(p.x[pi].k)
 		}
-		t.hitPi = pi // XXX? (+ already pre-set this way ?)
+		//t.hitPi = pi			already pre-set this way
 	}
 }
 
