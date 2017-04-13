@@ -744,7 +744,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	var p *x
 	q := t.r
 	if q == nil {
-		// XXX or just init to empty and jump to general case
 		z := t.insert(btDPool.Get().(*d), 0, k, v)
 		t.r, t.first, t.last = z, z, z
 		return
