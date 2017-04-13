@@ -824,6 +824,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 //
 // modulo the differing return values.
 func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists bool) (newV interface{} /*V*/, write bool)) (oldV interface{} /*V*/, written bool) {
+	defer func () { t.checkHit(k, opPut(written)) }()
 	pi := -1
 	var p *x
 	q := t.r
@@ -840,8 +841,118 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 		return
 	}
 
-	// TODO handle t.hitD
+	// check if we can do the update nearby previous change
+	i, ok := t.hitFind(k)
+	if i >= 0 {
+		dd := t.hitD
 
+		switch {
+		case ok:
+			newV, written = upd(dd.d[i].v, true)
+			if written {
+				dd.d[i].v = newV
+			}
+			t.hitDi = i
+			return
+
+		case dd.c < 2*kd:
+			newV, written = upd(newV, false)
+			if written {
+				t.insert(dd, i, k, newV)
+			} else {
+				t.hitDi = i
+			}
+			return
+
+		// here: need to overflow but we have to check: if overflowing would
+		// cause upper level overflow (splitX) -> we cannot overflow here -
+		// - need to do the usual scan from root to split index pages.
+		default:
+			p, pi := t.hitP, t.hitPi
+			if p != nil && p.c > 2*kx {
+				break
+			}
+
+			newV, written = upd(newV, false)
+
+			if written {
+				// NOTE overflow corrects hit Kmin, Kmax and Pi as needed
+				t.overflow(p, dd, pi, i, k, newV)
+			} else {
+				t.hitDi = i
+			}
+			return
+		}
+	}
+
+	// data page not quickly found - search and descent from root
+	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
+	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
+
+	for {
+		i, ok := t.find(q, k)
+		switch x := q.(type) {
+		case *x:
+			if ok {
+				i++
+			}
+
+			if x.c > 2*kx {
+				// NOTE splitX corrects hit Kmin and Kmax as needed
+				x, i = t.splitX(p, x, pi, i)
+			}
+
+			t.hitPKmin = t.hitKmin
+			t.hitPKmax = t.hitKmax
+
+			p = x
+			pi = i
+			q = p.x[pi].ch
+
+			if pi > 0 { // k=-∞ @-1
+				t.hitKmin.set(p.x[pi-1].k)
+			}
+
+			if pi < p.c { // k=+∞ @p.c
+				t.hitKmax.set(p.x[pi].k)
+			}
+
+		case *d:
+			// data page found - perform the update
+			t.hitP = p
+			t.hitPi = pi
+
+			switch {
+			case ok:
+				newV, written = upd(x.d[i].v, true)
+				if written {
+					x.d[i].v = newV
+				}
+				t.hitD, t.hitDi = x, i
+
+			default:
+				newV, written = upd(newV, false)
+
+				if !written {
+					t.hitD, t.hitDi = x, i
+					break
+				}
+
+				switch {
+				case x.c < 2*kd:
+					t.insert(x, i, k, newV)
+
+				default:
+					// NOTE overflow corrects hit Kmin, Kmax and Pi as needed
+					t.overflow(p, x, pi, i, k, newV)
+				}
+			}
+
+			return
+		}
+	}
+
+/*
 	for {
 		i, ok := t.find(q, k)
 		if ok {
@@ -849,7 +960,6 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			case *x:
 				i++
 				if x.c > 2*kx {
-					panic("TODO")
 					x, i = t.splitX(p, x, pi, i)
 				}
 				pi = i
@@ -863,8 +973,6 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 					return
 				}
 
-				// XXX update hit
-
 				x.d[i].v = newV
 			}
 			return
@@ -873,8 +981,7 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 		switch x := q.(type) {
 		case *x:
 			if x.c > 2*kx {
-				panic("TODO")
-				//x, i = t.splitX(p, x, pi, i)
+				x, i = t.splitX(p, x, pi, i)
 			}
 			pi = i
 			p = x
@@ -885,18 +992,16 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 				return
 			}
 
-			// XXX update hit
-
 			switch {
 			case x.c < 2*kd:
 				t.insert(x, i, k, newV)
 			default:
-				//t.overflow(p, x, pi, i, k, newV)
-				panic("TODO")
+				t.overflow(p, x, pi, i, k, newV)
 			}
 			return
 		}
 	}
+*/
 }
 
 func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {

@@ -44,7 +44,7 @@ func TODO(...interface{}) string { //TODOOK
 func use(...interface{}) {}
 
 func init() {
-	use(caller, dbg, TODO, isNil, (*Tree).dump, (*Tree).checkHit) //TODOOK
+	use(caller, dbg, TODO, isNil, (*Tree).dump, (*Tree).checkHit, opPut) //TODOOK
 }
 
 // ============================================================================
@@ -143,9 +143,17 @@ func (t *Tree) dump() string {
 type treeOp int
 
 const (
-	opSet treeOp = iota
+	opGet treeOp = iota
+	opSet
 	opDel
 )
+
+func opPut(written bool) treeOp {
+	if written {
+		return opSet
+	}
+	return opGet
+}
 
 // checkHit rescans t from root and checks that hit D, P, Kmin/Kmax and rest all match what they should
 // it can be used after Set/Put/Delete to verify consistency
@@ -207,6 +215,9 @@ loop:
 
 		case *d:
 			switch op {
+			case opGet:
+				panic("TODO")
+
 			case opSet:
 				if !ok {
 					bad("key %v not found after set", k)
