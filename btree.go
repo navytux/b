@@ -337,7 +337,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 			return true
 
-		// here: need to extract / underflow but we have to check: if  underflowing
+		// here: need to extract / underflow but we have to check: if underflowing
 		// would cause upper level underflow (underflowX) -> we cannot extract /
 		// underflow here - need to do the usual scan from root to underflow index pages.
 		default:
