@@ -161,7 +161,7 @@ func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	var ok bool
 
 	var hitKmin, hitKmax xkey
-	var hitPKmax xkey
+	var hitPKmin, hitPKmax xkey
 
 loop:
 	// here he tree is immutable while we are rescanning it, which means
@@ -176,6 +176,7 @@ loop:
 		i, ok = t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			hitPKmin = hitKmin
 			hitPKmax = hitKmax
 
 			p = x
@@ -186,11 +187,10 @@ loop:
 
 			q = p.x[pi].ch
 			if pi > 0 {
-				hitKminPrev := hitKmin
 				hitKmin.set(p.x[pi-1].k)
 
-				if hitKminPrev.kset && t.cmp(hitKmin.k, hitKminPrev.k) <= 0 {
-					bad("hitKmin not ↑: %v -> %v", hitKminPrev.k, hitKmin.k)
+				if hitPKmin.kset && t.cmp(hitKmin.k, hitPKmin.k) <= 0 {
+					bad("hitKmin not ↑: %v -> %v", hitPKmin.k, hitKmin.k)
 				}
 			}
 
@@ -230,8 +230,8 @@ loop:
 		bad("hitK mismatch:  [%v, %v)  ; want [%v, %v)", t.hitKmin, t.hitKmax, hitKmin, hitKmax)
 	}
 
-	if hitPKmax != t.hitPKmax {
-		bad("hitPKmax mismatch: %v  ; want %v", t.hitPKmax, hitPKmax)
+	if !(hitPKmin == t.hitPKmin && hitPKmax == t.hitPKmax) {
+		bad("hitPK mismatch: [%v, %v)  ; want [%v, %v)", t.hitPKmin, t.hitPKmax, hitPKmin, hitPKmax)
 	}
 
 	if dd != t.hitD || i != t.hitDi {

@@ -105,9 +105,10 @@ type (
 		hitDi    int
 		hitP     *x   // parent & pos for data page (= -1 if no parent)
 		hitPi    int
-		hitKmin  xkey // data page allowed key range is [hitKmin, hitKmax)
+		hitKmin  xkey // hitD allowed key range is [hitKmin, hitKmax)
 		hitKmax  xkey
-		hitPKmax xkey // allowed Kmax for whole hitP
+		hitPKmin xkey // ----//--- for hitP
+		hitPKmax xkey
 	}
 
 	xe struct { // x element
@@ -378,8 +379,8 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	//var hitPKmax xkey         // Kmax for whole hitP
 	t.hitKmin = xkey{}	// initially [-∞, +∞)
 	t.hitKmax = xkey{}
+	t.hitPKmin = xkey{}
 	t.hitPKmax = xkey{}
-
 
 	for {
 		i, ok := t.find(q, k)
@@ -394,6 +395,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 				x, i = t.underflowX(p, x, pi, i)
 			}
 
+			t.hitPKmin = t.hitKmin
 			t.hitPKmax = t.hitKmax
 
 			p = x
@@ -771,6 +773,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//var hitPKmax xkey         // Kmax for whole hitP
 	t.hitKmin = xkey{}	// initially [-∞, +∞)
 	t.hitKmax = xkey{}
+	t.hitPKmin = xkey{}
 	t.hitPKmax = xkey{}
 
 	for {
@@ -787,6 +790,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			}
 
 			//hitPKmax = hitKmax
+			t.hitPKmin = t.hitKmin
 			t.hitPKmax = t.hitKmax
 
 			p = x
@@ -1029,9 +1033,20 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		dbg("\tunderflow -> cat l <- q")
 		t.hitD = l
 		t.hitDi += l.c
-		t.cat(p, l, q, pi-1)
-		t.hitKmin.set(p.x[pi-1].k)
-		t.hitPi = pi - 1
+		pi--
+		t.cat(p, l, q, pi)
+		//t.hitKmin.set(p.x[pi-1].k)
+		t.hitKmin = t.hitPKmin
+		if t.r == l {
+			// cat removed p
+			t.hitP = nil
+			t.hitPi = -1
+		} else {
+			if pi > 0 {
+				t.hitKmin.set(p.x[pi-1].k)
+			}
+			t.hitPi = pi
+		}
 		return
 	}
 
@@ -1039,15 +1054,15 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
 	t.hitKmax = t.hitPKmax
-	if t.r != q {
+	if t.r == q {
+		// cat removed p
+		t.hitP = nil
+		t.hitPi = -1
+	} else {
 		if pi < p.c { // means < ∞
 			t.hitKmax.set(p.x[pi].k)
 		}
 		t.hitPi = pi // XXX? (+ already pre-set this way ?)
-	} else {
-		// cat removed p
-		t.hitP = nil
-		t.hitPi = -1
 	}
 }
 
@@ -1094,16 +1109,22 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 
 	if l != nil {
 		i += l.c + 1
-		t.catX(p, l, q, pi-1)
-		t.hitKmin.set(p.x[pi-1].k)
+		pi--
+		//t.catX(p, l, q, pi-1)
+		t.catX(p, l, q, pi)
 		q = l
+		t.hitKmin = t.hitPKmin
+		if t.r != q && pi > 0 {
+			t.hitKmin.set(p.x[pi-1].k)
+		}
+		//t.hitKmin.set(p.x[pi-1].k)	// XXX wrong -> see cat handling in underflow
 		return q, i
 	}
 
 	t.catX(p, q, r, pi)
 	t.hitKmax = t.hitPKmax
 	if t.r != q && pi < p.c { // means < ∞
-		t.hitKmax.set(p.x[pi].k)
+		t.hitKmax.set(p.x[pi].k)	// XXX ok (was XXX wrong -> see cat handling in underflow)
 	}
 	return q, i
 }
