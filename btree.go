@@ -647,11 +647,10 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		p.x[pi].k = k
 
 		t.hitKmin.set(k)
-		kmax := t.hitPKmax
+		t.hitKmax = t.hitPKmax
 		if pi + 1 < p.c { // means < ∞
-			kmax.set(p.x[pi+1].k)
+			t.hitKmax.set(p.x[pi+1].k)
 		}
-		t.hitKmax = kmax
 		t.hitPi = pi + 1
 		return
 	}
@@ -714,11 +713,11 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  PKmax: %v\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	//dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  PKmax: %v\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opSet)
-	defer func() {
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//defer func() {
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 
 	// check if we can do the update nearby previous change
@@ -763,56 +762,43 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		return
 	}
 
-	var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	var hitPKmax xkey         // Kmax for whole hitP
+	// XXX recheck what is better - to update hits in t. directly or here and copy at last
+	// (performance) NOTE for splitX it is handy to have them in t.
+	//var hitKmin, hitKmax xkey // initially [-∞, +∞)
+	//var hitPKmax xkey         // Kmax for whole hitP
+	t.hitKmin = xkey{}	// initially [-∞, +∞)
+	t.hitKmax = xkey{}
+	t.hitPKmax = xkey{}
 
 	for {
 		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
-			//hitPKmax = hitKmax
 			if ok {
 				i++
 			}
 
 			if x.c > 2*kx {
 				//dbg("splitX")
-				x, i, p, pi = t.splitX(p, x, pi, i)
-
-				// FIXME move logic inside splitX
-				// NOTE splitX changes p which means hit
-				// Kmin/Kmax/PKmax have to be recomputed
-				if pi >= 0 && pi < p.c {
-					hitPKmax.set(p.x[pi].k)
-					//dbg("hitPKmax X: %v", hitPKmax)
-					hitKmax = hitPKmax
-					//dbg("hitKmax X: %v", hitKmax)
-				}
-
-				if pi > 0 {
-					hitKmin.set(p.x[pi-1].k)
-					//dbg("hitKmin X: %v", hitKmin)
-				}
-			} else {
-				// p unchanged
-				// FIXME move to above without else
-				hitPKmax = hitKmax
+				x, i = t.splitX(p, x, pi, i)
 			}
+
+			//hitPKmax = hitKmax
+			t.hitPKmax = t.hitKmax
 
 			p = x
 			pi = i
-			//if ok {
-			//	pi++
-			//}
 			q = p.x[pi].ch
 
 			if pi > 0 {
-				hitKmin.set(p.x[pi-1].k)
+				//hitKmin.set(p.x[pi-1].k)
+				t.hitKmin.set(p.x[pi-1].k)
 				//dbg("hitKmin: %v", hitKmin)
 			}
 
 			if pi < p.c { // == p.c means ∞
-				hitKmax.set(p.x[pi].k)
+				//hitKmax.set(p.x[pi].k)
+				t.hitKmax.set(p.x[pi].k)
 				//dbg("hitKmax: %v", hitKmax)
 			}
 
@@ -821,9 +807,9 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			// data page found - perform the update
 			t.hitP = p
 			t.hitPi = pi
-			t.hitKmin = hitKmin
-			t.hitKmax = hitKmax
-			t.hitPKmax = hitPKmax
+			//t.hitKmin = hitKmin
+			//t.hitKmax = hitKmax
+			//t.hitPKmax = hitPKmax
 
 			switch {
 			case ok:
@@ -885,7 +871,7 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 				i++
 				if x.c > 2*kx {
 					panic("TODO")
-					x, i, _, _ = t.splitX(p, x, pi, i)
+					x, i = t.splitX(p, x, pi, i)
 				}
 				pi = i
 				p = x
@@ -978,7 +964,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	}
 }
 
-func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int, *x, int) {
+func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 	t.ver++
 	r := btXPool.Get().(*x)
 	copy(r.x[:], q.x[kx+1:])
@@ -999,10 +985,16 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int, *x, int) {
 	if i > kx {
 		q = r
 		i -= kx + 1
-		pi++
+		t.hitKmin.set(p.x[pi].k)
+		t.hitKmax = t.hitPKmax
+		if pi + 1 < p.c { // means < ∞
+			t.hitKmax.set(p.x[pi+1].k)
+		}
+	} else {
+		t.hitKmax.set(p.x[pi].k)
 	}
 
-	return q, i, p, pi
+	return q, i
 }
 
 func (t *Tree) underflow(p *x, q *d, pi int) {
