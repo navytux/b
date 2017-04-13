@@ -862,6 +862,10 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 				t.insert(dd, i, k, newV)
 			} else {
 				t.hitDi = i
+				// if it was only Get landed past max key - adjust it to valid entry
+				if t.hitDi >= dd.c {
+					t.hitDi--
+				}
 			}
 			return
 
@@ -881,6 +885,10 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 				t.overflow(p, dd, pi, i, k, newV)
 			} else {
 				t.hitDi = i
+				// see about "valid entry" ^^^
+				if t.hitDi >= dd.c {
+					t.hitDi--
+				}
 			}
 			return
 		}
@@ -937,6 +945,10 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 
 				if !written {
 					t.hitD, t.hitDi = x, i
+					// see about "valid entry" ^^^
+					if t.hitDi >= x.c {
+						t.hitDi--
+					}
 					break
 				}
 

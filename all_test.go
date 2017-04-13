@@ -216,7 +216,10 @@ loop:
 		case *d:
 			switch op {
 			case opGet:
-				panic("TODO")
+				// tried to search for key > max k in x
+				if !ok && i >= x.c {
+					i = x.c - 1
+				}
 
 			case opSet:
 				if !ok {
