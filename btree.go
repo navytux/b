@@ -965,57 +965,6 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			return
 		}
 	}
-
-/*
-	for {
-		i, ok := t.find(q, k)
-		if ok {
-			switch x := q.(type) {
-			case *x:
-				i++
-				if x.c > 2*kx {
-					x, i = t.splitX(p, x, pi, i)
-				}
-				pi = i
-				p = x
-				q = x.x[i].ch
-				continue
-			case *d:
-				oldV = x.d[i].v
-				newV, written = upd(oldV, true)
-				if !written {
-					return
-				}
-
-				x.d[i].v = newV
-			}
-			return
-		}
-
-		switch x := q.(type) {
-		case *x:
-			if x.c > 2*kx {
-				x, i = t.splitX(p, x, pi, i)
-			}
-			pi = i
-			p = x
-			q = x.x[i].ch
-		case *d: // new KV pair
-			newV, written = upd(newV, false)
-			if !written {
-				return
-			}
-
-			switch {
-			case x.c < 2*kd:
-				t.insert(x, i, k, newV)
-			default:
-				t.overflow(p, x, pi, i, k, newV)
-			}
-			return
-		}
-	}
-*/
 }
 
 func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /*V*/) {
