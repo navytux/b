@@ -245,7 +245,6 @@ func (t *Tree) Close() {
 }
 
 func (t *Tree) cat(p *x, q, r *d, pi int) {
-	// XXX update hit (called from Delete -> underflow ) ?
 	t.ver++
 	q.mvL(r, r.c)
 	if r.n != nil {
@@ -365,19 +364,28 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		return false
 	}
 
-	var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	var hitPKmax xkey         // Kmax for whole hitP
+	// XXX recheck what is better - directly update t.hitK* or copy
+	// NOTE having t.hitK* up to data is handy for underflowX
+	//var hitKmin, hitKmax xkey // initially [-∞, +∞)
+	//var hitPKmax xkey         // Kmax for whole hitP
+	t.hitKmin = xkey{}	// initially [-∞, +∞)
+	t.hitKmax = xkey{}
+	t.hitPKmax = xkey{}
 
 
 	for {
 		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
-			hitPKmax = hitKmax
+			if ok {
+				i++
+			}
 
 			if x.c < kx && q != t.r {
 				dbg("UNDERFLOWX\n\tp: %v @%d\n\tx: %v @%d", p, pi, x, i)
-				x, i, pi = t.underflowX(p, x, pi, i)
+				x, i = t.underflowX(p, x, pi, i)
+
+				/*
 				dbg("\n\t-> p: %v @%d\n\tx: %v @%d", p, pi, x, i)
 
 				// NOTE underflowX changes p which means hit
@@ -393,32 +401,34 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 					hitKmin.set(p.x[pi-1].k)
 					dbg("hitKmin X: %v", hitKmin)
 				}
+				*/
 			}
+
+			t.hitPKmax = t.hitKmax
 
 			p = x
 			pi = i
-			if ok {
-				pi++
-			}
 			q = x.x[pi].ch
 
 			if pi > 0 {
-				hitKmin.set(p.x[pi-1].k)
-				dbg("hitKmin: %v", hitKmin)
+				//hitKmin.set(p.x[pi-1].k)
+				t.hitKmin.set(p.x[pi-1].k)
+				dbg("hitKmin: %v", t.hitKmin)
 			}
 
 			if pi < p.c { // == p.c means ∞
-				hitKmax.set(p.x[pi].k)
-				dbg("hitKmax: %v", hitKmax)
+				//hitKmax.set(p.x[pi].k)
+				t.hitKmax.set(p.x[pi].k)
+				dbg("hitKmax: %v", t.hitKmax)
 			}
 
 		case *d:
 			// data page found - perform the delete
 			t.hitP = p
 			t.hitPi = pi
-			t.hitKmin = hitKmin
-			t.hitKmax = hitKmax
-			t.hitPKmax = hitPKmax
+			//t.hitKmin = hitKmin
+			//t.hitKmax = hitKmax
+			//t.hitPKmax = hitPKmax
 
 			if !ok {
 				dbg("!ok")
@@ -1031,15 +1041,15 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
-	kmax := t.hitPKmax
-	if pi < p.c { // means < ∞
-		kmax.set(p.x[pi].k)
+	t.hitKmax = t.hitPKmax
+	if t.r != q && pi < p.c { // means < ∞
+		t.hitKmax.set(p.x[pi].k)
 	}
-	t.hitKmax = kmax
-	t.hitPi = pi
+	// XXX vvv correct vs t.r != q ?
+	t.hitPi = pi // XXX? (+ already pre-set this way ?)
 }
 
-func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int, int) {
+func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 	t.ver++
 	var l, r *x
 
@@ -1061,7 +1071,8 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int, int) {
 		i++
 		l.c--
 		p.x[pi-1].k = l.x[l.c].k
-		return q, i, pi
+		t.hitKmin.set(l.x[l.c].k)
+		return q, i
 	}
 
 	if r != nil && r.c > kx {
@@ -1069,24 +1080,30 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int, int) {
 		q.c++
 		q.x[q.c].ch = r.x[0].ch
 		p.x[pi].k = r.x[0].k
+		t.hitKmax.set(r.x[0].k)
 		copy(r.x[:], r.x[1:r.c])
 		r.c--
 		rc := r.c
 		r.x[rc].ch = r.x[rc+1].ch
 		r.x[rc].k = zk
 		r.x[rc+1].ch = nil
-		return q, i, pi
+		return q, i
 	}
 
 	if l != nil {
 		i += l.c + 1
 		t.catX(p, l, q, pi-1)
+		t.hitKmin.set(p.x[pi-1].k)
 		q = l
-		return q, i, pi - 1
+		return q, i
 	}
 
 	t.catX(p, q, r, pi)
-	return q, i, pi
+	t.hitKmax = t.hitPKmax
+	if t.r != q && pi < p.c { // means < ∞
+		t.hitKmax.set(p.x[pi].k)
+	}
+	return q, i
 }
 
 // ----------------------------------------------------------------- Enumerator
