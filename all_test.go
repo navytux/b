@@ -141,6 +141,7 @@ func (t *Tree) dump() string {
 }
 
 type treeOp int
+
 const (
 	opSet treeOp = iota
 	opDel
@@ -203,7 +204,6 @@ loop:
 					bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
 				}
 			}
-
 
 		case *d:
 			switch op {
