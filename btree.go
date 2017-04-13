@@ -103,7 +103,7 @@ type (
 		// information about last data page which Set/Put/Delete modified
 		hitD     *d   // data page & pos of last write access
 		hitDi    int
-		hitP     *x   // parent & pos for data page (= -1 if no parent)
+		hitP     *x   // parent & pos for data page (= nil/-1 if no parent)
 		hitPi    int
 		hitKmin  xkey // hitD allowed key range is [hitKmin, hitKmax)
 		hitKmax  xkey
@@ -233,7 +233,7 @@ func (t *Tree) Clear() {
 	clr(t.r)
 	t.c, t.first, t.last, t.r = 0, nil, nil, nil
 	t.hitD, t.hitDi, t.hitP, t.hitPi = nil, -1, nil, -1
-	t.hitKmin, t.hitKmax, t.hitPKmax = xkey{}, xkey{}, xkey{}
+	t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax = xkey{}, xkey{}, xkey{}, xkey{}
 	t.ver++
 }
 
@@ -308,7 +308,7 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // Delete removes the k's KV pair, if it exists, in which case Delete returns
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
-	//dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v) PKmax: %v\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	//dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v)  pk: [%v, %v)\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opDel)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
@@ -317,36 +317,33 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	// check if we can do the delete nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		//dbg("hit found\t-> %d, %v", i, ok)
 		dd := t.hitD
 
 		switch {
 		case !ok:
-			//dbg("ok'")
+			// tried to delete last or element past max k in hitD
 			if i >= dd.c {
-				// tried to delete element past max k in hitD
 				i--
 			}
 			t.hitDi = i
 			return false
 
 		case dd.c > kd:
-			//dbg("extract'")
 			t.extract(dd, i)
 			if t.hitDi >= dd.c {
 				t.hitDi--
 			}
 			return true
 
-		// here: need to extract / underflow but check to not underflow too much XXX
-		// (no underflowX must be called ?)
+		// here: need to extract / underflow but we have to check: if  underflowing
+		// would cause upper level underflow (underflowX) -> we cannot extract /
+		// underflow here - need to do the usual scan from root to underflow index pages.
 		default:
 			p, pi := t.hitP, t.hitPi
 			if p != nil && p.c < kx && p != t.r {
 				break
 			}
 
-			//dbg("underflow'")
 			t.extract(dd, i)
 
 			// XXX recheck
@@ -369,18 +366,11 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	var p *x
 	q := t.r
 	if q == nil {
-		// XXX update hit ?
 		return false
 	}
 
-	// XXX recheck what is better - directly update t.hitK* or copy
-	// NOTE having t.hitK* up to data is handy for underflowX
-	//var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	//var hitPKmax xkey         // Kmax for whole hitP
-	t.hitKmin = xkey{}	// initially [-∞, +∞)
-	t.hitKmax = xkey{}
-	t.hitPKmin = xkey{}
-	t.hitPKmax = xkey{}
+	t.hitKmin, t.hitKmax = xkey{}, xkey{}	// initially [-∞, +∞)
+	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
 
 	for {
 		i, ok := t.find(q, k)
@@ -391,7 +381,6 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 
 			if x.c < kx && q != t.r {
-				//dbg("underflowX")
 				x, i = t.underflowX(p, x, pi, i)
 			}
 
@@ -403,46 +392,35 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			q = x.x[pi].ch
 
 			if pi > 0 {
-				//hitKmin.set(p.x[pi-1].k)
 				t.hitKmin.set(p.x[pi-1].k)
-				//dbg("hitKmin: %v", t.hitKmin)
 			}
 
-			if pi < p.c { // == p.c means ∞
-				//hitKmax.set(p.x[pi].k)
+			if pi < p.c { // k=∞ @ pi=p.c
 				t.hitKmax.set(p.x[pi].k)
-				//dbg("hitKmax: %v", t.hitKmax)
 			}
 
 		case *d:
 			// data page found - perform the delete
 			t.hitP = p
 			t.hitPi = pi
-			//t.hitKmin = hitKmin
-			//t.hitKmax = hitKmax
-			//t.hitPKmax = hitPKmax
 
 			if !ok {
-				//dbg("!ok")
 				t.hitD = x
 				if i >= x.c {
-					// tried to delete element past max k in hitD
+					// tried to delete last or element past max k in hitD
 					i--
 				}
 				t.hitDi = i
 				return false
 			}
 
-			//dbg("extract")
 			t.extract(x, i)
 
 			if x.c < kd {
 				if q != t.r {
 					// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
-					//dbg("underflow")
 					t.underflow(p, x, pi)
 				} else if t.c == 0 {
-					//dbg("clear")
 					t.Clear()
 				}
 			}
@@ -464,11 +442,13 @@ func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
 	}
 	q.d[q.c] = zde // GC
 	t.c--
+
 	t.hitD = q
-	//if i >= q.c {
-	//	i--
-	//}
+	// NOTE extract users - in the end - must decrement t.hitDi if t.hitDi == t.hitD.c
+	// we are not doing it right here because unaltered position is
+	// required in case merging a right sibling data page will be needed.
 	t.hitDi = i
+
 	return
 }
 
@@ -725,7 +705,7 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
-	//dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  PKmax: %v\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	//dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  pk: [%v, %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opSet)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
@@ -735,18 +715,15 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		//dbg("hit found\t-> %d, %v", i, ok)
 		dd := t.hitD
 
 		switch {
 		case ok:
-			//dbg("ok'")
 			dd.d[i].v = v
 			t.hitDi = i
 			return
 
 		case dd.c < 2*kd:
-			//dbg("insert'")
 			t.insert(dd, i, k, v)
 			return
 
@@ -756,7 +733,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		default:
 			p, pi := t.hitP, t.hitPi
 			if p == nil || p.c <= 2*kx {
-				//dbg("overflow'")
 				t.overflow(p, dd, pi, i, k, v)
 				return
 			}
@@ -774,14 +750,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		return
 	}
 
-	// XXX recheck what is better - to update hits in t. directly or here and copy at last
-	// (performance) NOTE for splitX it is handy to have them in t.
-	//var hitKmin, hitKmax xkey // initially [-∞, +∞)
-	//var hitPKmax xkey         // Kmax for whole hitP
-	t.hitKmin = xkey{}	// initially [-∞, +∞)
-	t.hitKmax = xkey{}
-	t.hitPKmin = xkey{}
-	t.hitPKmax = xkey{}
+	t.hitKmin, t.hitKmax = xkey{}, xkey{}	// initially [-∞, +∞)
+	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
 
 	for {
 		i, ok := t.find(q, k)
