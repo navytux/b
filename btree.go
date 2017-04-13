@@ -492,7 +492,7 @@ func (t *Tree) find(q interface{}, k interface{} /*K*/) (i int, ok bool) {
 	return l, false
 }
 
-// same as find but when we pre-know range to search and for data-page only
+// find2 is the same as find but when we pre-know range to search and for data-page only
 func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	for l <= h {
 		m := (l + h) >> 1
@@ -509,13 +509,13 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 	return l, false
 }
 
-// hitFind returns k position in previosly hit data page
+// hitFind returns position for k in previously hit data page
 // if k should not reside in hit range: -1, false is returned
-// othrewise returns are:
+// otherwise returns are:
 // - i:  index corresponding to data entry in t.hitD with min(k' : k <= k')
 // - ok: whether k' == k
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
-	// XXX reenable to test how slow path computes hit{Kmin,Kmax} on all keys
+	// DEBUG: enable this to test how slow path computes hit{Kmin,Kmax} on all keys
 	//return -1, false
 
 	hit := t.hitD
