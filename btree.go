@@ -307,11 +307,11 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // Delete removes the k's KV pair, if it exists, in which case Delete returns
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
-	dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v) PKmax: %v\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
+	//dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v) PKmax: %v\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmax, t.dump())
 	defer t.checkHit(k, opDel)
-	defer func() {
-		dbg("--- POST\n%s\n====\n", t.dump())
-	}()
+	//defer func() {
+	//	dbg("--- POST\n%s\n====\n", t.dump())
+	//}()
 
 	// check if we can do the delete nearby previous change
 	i, ok := t.hitFind(k)
@@ -332,6 +332,9 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 		case dd.c > kd:
 			dbg("extract'")
 			t.extract(dd, i)
+			if t.hitDi >= dd.c {
+				t.hitDi--
+			}
 			return true
 
 		// here: need to extract / underflow but check to not underflow too much XXX
@@ -351,6 +354,11 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			} else if t.c == 0 {
 				t.Clear()
 			}
+
+			if t.hitD != nil && t.hitDi >= t.hitD.c {
+				t.hitDi--
+			}
+
 			return true
 		}
 	}
@@ -382,7 +390,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 
 			if x.c < kx && q != t.r {
-				dbg("UNDERFLOWX\n\tp: %v @%d\n\tx: %v @%d", p, pi, x, i)
+				dbg("underflowX")
 				x, i = t.underflowX(p, x, pi, i)
 			}
 
@@ -419,19 +427,22 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 				return false
 			}
 
-			dbg("extract")
+			dbg("extract %v  @%d", x, i)
 			t.extract(x, i)
-			if x.c >= kd {
-				return true
+
+			if x.c < kd {
+				if q != t.r {
+					// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
+					dbg("underflow")
+					t.underflow(p, x, pi)
+				} else if t.c == 0 {
+					dbg("clear")
+					t.Clear()
+				}
 			}
 
-			if q != t.r {
-				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
-				dbg("underflow")
-				t.underflow(p, x, pi)
-			} else if t.c == 0 {
-				dbg("clear")
-				t.Clear()
+			if t.hitD != nil && t.hitDi >= t.hitD.c {
+				t.hitDi--
 			}
 			return true
 		}
@@ -448,9 +459,9 @@ func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
 	q.d[q.c] = zde // GC
 	t.c--
 	t.hitD = q
-	if i >= q.c {
-		i--
-	}
+	//if i >= q.c {
+	//	i--
+	//}
 	t.hitDi = i
 	return
 }
@@ -994,6 +1005,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	l, r := p.siblings(pi)
 
 	if l != nil && l.c+q.c >= 2*kd {
+		dbg("\tunderflow -> mv-from-l")
 		l.mvR(q, 1)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
@@ -1003,6 +1015,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	}
 
 	if r != nil && q.c+r.c >= 2*kd {
+		dbg("\tunderflow -> mv-from-r")
 		q.mvL(r, 1)
 		p.x[pi].k = r.d[0].k
 		t.hitKmax.set(r.d[0].k)
@@ -1013,6 +1026,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	}
 
 	if l != nil {
+		dbg("\tunderflow -> cat l <- q")
 		t.hitD = l
 		t.hitDi += l.c
 		t.cat(p, l, q, pi-1)
@@ -1021,6 +1035,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		return
 	}
 
+	dbg("\tunderflow -> cat q <- r")
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
 	t.hitKmax = t.hitPKmax
