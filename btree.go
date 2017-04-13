@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	//kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	//kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	kx = 2
-	kd = 2
+	kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kx = 2
+	//kd = 2
 )
 
 func init() {
