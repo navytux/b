@@ -384,7 +384,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 
 			if x.c < kx && q != t.r {
-				// NOTE underflowX will correct ... XXX do we need this comment ?
+				// NOTE underflowX corrects hit Kmin and Kmax as needed
 				x, i = t.underflowX(p, x, pi, i)
 			}
 
@@ -1077,21 +1077,19 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 	if l != nil {
 		i += l.c + 1
 		pi--
-		//t.catX(p, l, q, pi-1)
 		t.catX(p, l, q, pi)
 		q = l
 		t.hitKmin = t.hitPKmin
-		if t.r != q && pi > 0 {
+		if t.r != q && pi > 0 { // k=+∞ @p.c
 			t.hitKmin.set(p.x[pi-1].k)
 		}
-		//t.hitKmin.set(p.x[pi-1].k)	// XXX wrong -> see cat handling in underflow
 		return q, i
 	}
 
 	t.catX(p, q, r, pi)
 	t.hitKmax = t.hitPKmax
-	if t.r != q && pi < p.c { // means < ∞
-		t.hitKmax.set(p.x[pi].k) // XXX ok (was XXX wrong -> see cat handling in underflow)
+	if t.r != q && pi < p.c { // k=+∞ @p.c
+		t.hitKmax.set(p.x[pi].k)
 	}
 	return q, i
 }
