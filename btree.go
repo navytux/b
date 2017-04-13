@@ -384,24 +384,6 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			if x.c < kx && q != t.r {
 				dbg("UNDERFLOWX\n\tp: %v @%d\n\tx: %v @%d", p, pi, x, i)
 				x, i = t.underflowX(p, x, pi, i)
-
-				/*
-				dbg("\n\t-> p: %v @%d\n\tx: %v @%d", p, pi, x, i)
-
-				// NOTE underflowX changes p which means hit
-				// Kmin/Kmax/PKmax have to be recomputed
-				if pi >= 0 && pi < p.c {
-					hitPKmax.set(p.x[pi].k)
-					dbg("hitPKmax X: %v", hitPKmax)
-					hitKmax = hitPKmax
-					dbg("hitKmax X: %v", hitKmax)
-				}
-
-				if pi > 0 {
-					hitKmin.set(p.x[pi-1].k)
-					dbg("hitKmin X: %v", hitKmin)
-				}
-				*/
 			}
 
 			t.hitPKmax = t.hitKmax
@@ -1042,11 +1024,16 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
 	t.hitKmax = t.hitPKmax
-	if t.r != q && pi < p.c { // means < ∞
-		t.hitKmax.set(p.x[pi].k)
+	if t.r != q {
+		if pi < p.c { // means < ∞
+			t.hitKmax.set(p.x[pi].k)
+		}
+		t.hitPi = pi // XXX? (+ already pre-set this way ?)
+	} else {
+		// cat removed p
+		t.hitP = nil
+		t.hitPi = -1
 	}
-	// XXX vvv correct vs t.r != q ?
-	t.hitPi = pi // XXX? (+ already pre-set this way ?)
 }
 
 func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
