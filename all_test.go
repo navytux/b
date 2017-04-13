@@ -156,7 +156,7 @@ func opPut(written bool) treeOp {
 }
 
 // checkHit rescans t from root and checks that hit D, P, Kmin/Kmax and rest all match what they should
-// it can be used after Set/Put/Delete to verify consistency
+// it can be used after Set/Put/Delete to verify that all hit parameters were calculated correctly
 func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	wrong := false
 	bad := func(s string, va ...interface{}) {
