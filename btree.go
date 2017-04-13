@@ -736,11 +736,13 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		// - need to do the usual scan from root to split index pages.
 		default:
 			p, pi := t.hitP, t.hitPi
-			if p == nil || p.c <= 2*kx {
-				// XXX note on overflow corrects what
-				t.overflow(p, dd, pi, i, k, v)
-				return
+			if p != nil && p.c > 2*kx {
+				break
 			}
+
+			// NOTE overflow corrects hit Kmin, Kmax and Pi as needed
+			t.overflow(p, dd, pi, i, k, v)
+			return
 		}
 	}
 
@@ -800,7 +802,6 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 
 			default:
 				// NOTE overflow corrects hit Kmin, Kmax and Pi as needed
-				// XXX if split
 				t.overflow(p, x, pi, i, k, v)
 			}
 
@@ -929,7 +930,7 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 	if i > kd {
 		t.insert(r, i-kd, k, v)
 		t.hitKmin.set(p.x[pi].k)
-		t.hitKmax := t.hitPKmax
+		t.hitKmax = t.hitPKmax
 		if pi+1 < p.c { // k=+∞ @p.c
 			t.hitKmax.set(p.x[pi+1].k)
 		}
