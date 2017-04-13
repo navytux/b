@@ -394,11 +394,11 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			pi = i
 			q = x.x[pi].ch
 
-			if pi > 0 { // k=-∞ @ pi=-1
+			if pi > 0 { // k=-∞ @-1
 				t.hitKmin.set(p.x[pi-1].k)
 			}
 
-			if pi < p.c { // k=+∞ @ pi=p.c
+			if pi < p.c { // k=+∞ @p.c
 				t.hitKmax.set(p.x[pi].k)
 			}
 
@@ -626,7 +626,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
 		t.hitKmin.set(q.d[0].k)
-		t.hitPi = pi // XXX already pre-set this way
+		//t.hitPi = pi			already pre-set this way
 		return
 	}
 
@@ -636,7 +636,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
 			t.hitKmax.set(r.d[0].k)
-			t.hitPi = pi // XXX already pre-set this way
+			//t.hitPi = pi		already pre-set this way
 			return
 		}
 
@@ -645,7 +645,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{
 
 		t.hitKmin.set(k)
 		t.hitKmax = t.hitPKmax
-		if pi+1 < p.c { // means < ∞
+		if pi+1 < p.c { // k=+∞ @p.c
 			t.hitKmax.set(p.x[pi+1].k)
 		}
 		t.hitPi = pi + 1
@@ -737,6 +737,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 		default:
 			p, pi := t.hitP, t.hitPi
 			if p == nil || p.c <= 2*kx {
+				// XXX note on overflow corrects what
 				t.overflow(p, dd, pi, i, k, v)
 				return
 			}
@@ -765,7 +766,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			}
 
 			if x.c > 2*kx {
-				// NOTE splitX will correct ... XXX do we need this comment ?
+				// NOTE splitX corrects hit Kmin and Kmax as needed
 				x, i = t.splitX(p, x, pi, i)
 			}
 
@@ -776,11 +777,11 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			pi = i
 			q = p.x[pi].ch
 
-			if pi > 0 { // k=-∞ @ pi=-1
+			if pi > 0 { // k=-∞ @-1
 				t.hitKmin.set(p.x[pi-1].k)
 			}
 
-			if pi < p.c { // k=+∞ @ pi=p.c
+			if pi < p.c { // k=+∞ @p.c
 				t.hitKmax.set(p.x[pi].k)
 			}
 
@@ -798,7 +799,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 				t.insert(x, i, k, v)
 
 			default:
-				// NOTE overflow will correct hit Kmin, Kmax, P and Pi as needed
+				// NOTE overflow corrects hit Kmin, Kmax and Pi as needed
+				// XXX if split
 				t.overflow(p, x, pi, i, k, v)
 			}
 
@@ -921,21 +923,21 @@ func (t *Tree) split(p *x, q *d, pi, i int, k interface{} /*K*/, v interface{} /
 		pi = 0
 		t.r = p
 		t.hitP = p
+		t.hitPi = pi
 	}
 
 	if i > kd {
 		t.insert(r, i-kd, k, v)
 		t.hitKmin.set(p.x[pi].k)
-		kmax := t.hitPKmax
-		if pi+1 < p.c {
-			kmax.set(p.x[pi+1].k)
+		t.hitKmax := t.hitPKmax
+		if pi+1 < p.c { // k=+∞ @p.c
+			t.hitKmax.set(p.x[pi+1].k)
 		}
-		t.hitKmax = kmax
 		t.hitPi = pi + 1
 	} else {
 		t.insert(q, i, k, v)
 		t.hitKmax.set(r.d[0].k)
-		t.hitPi = pi // XXX already pre-set so
+		//t.hitPi = pi			already pre-set this way
 	}
 }
 
@@ -962,7 +964,7 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 		i -= kx + 1
 		t.hitKmin.set(p.x[pi].k)
 		t.hitKmax = t.hitPKmax
-		if pi+1 < p.c { // means < ∞
+		if pi+1 < p.c { // k=+∞ @p.c
 			t.hitKmax.set(p.x[pi+1].k)
 		}
 	} else {
