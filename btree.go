@@ -317,7 +317,7 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	// check if we can do the delete nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		dbg("hit found\t-> %d, %v", i, ok)
+		//dbg("hit found\t-> %d, %v", i, ok)
 		dd := t.hitD
 
 		switch {
@@ -531,7 +531,8 @@ func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
 // - i:  index corresponding to data entry in t.hitD with min(k' : k <= k')
 // - ok: whether k' == k
 func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
-	return -1, false	// XXX for testing how hit{Kmin,Kmax} are computed on all test keys
+	// XXX reenable to test how slow path computes hit{Kmin,Kmax} on all keys
+	//return -1, false
 
 	hit := t.hitD
 	if hit == nil {
@@ -734,7 +735,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	// check if we can do the update nearby previous change
 	i, ok := t.hitFind(k)
 	if i >= 0 {
-		dbg("hit found\t-> %d, %v", i, ok)
+		//dbg("hit found\t-> %d, %v", i, ok)
 		dd := t.hitD
 
 		switch {
