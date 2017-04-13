@@ -146,7 +146,8 @@ const (
 	opDel
 )
 
-// rescan t from root and check that hit D, P, Kmin/Kmax and rest all match what they should
+// checkHit rescans t from root and checks that hit D, P, Kmin/Kmax and rest all match what they should
+// it can be used after Set/Put/Delete to verify consistency
 func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	wrong := false
 	bad := func(s string, va ...interface{}) {
@@ -164,9 +165,9 @@ func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	var hitPKmin, hitPKmax xkey
 
 loop:
-	// here he tree is immutable while we are rescanning it, which means
-	// the logic to get hitKmin/hitKmax & friends is simpler compared to
-	// that in Set when splitX may occurr.
+	// here the tree is immutable while we are rescanning it, which means
+	// the logic to get hitKmin/hitKmax & friends is much simpler compared
+	// to that in Set and Delete when e.g. splitX and underflowX may occur.
 	for {
 		// empty tree
 		if q == nil {
@@ -179,13 +180,14 @@ loop:
 			hitPKmin = hitKmin
 			hitPKmax = hitKmax
 
-			p = x
-			pi = i
 			if ok {
-				pi++
+				i++
 			}
 
+			p = x
+			pi = i
 			q = p.x[pi].ch
+
 			if pi > 0 {
 				hitKmin.set(p.x[pi-1].k)
 
@@ -215,7 +217,7 @@ loop:
 					bad("key %v found after delete", k)
 				}
 
-				// delted last element or tried to delete element past max k in x
+				// deleted last element or tried to delete element past max k in x
 				if i >= x.c {
 					i = x.c - 1
 				}
@@ -234,11 +236,11 @@ loop:
 		bad("hitPK mismatch: [%v, %v)  ; want [%v, %v)", t.hitPKmin, t.hitPKmax, hitPKmin, hitPKmax)
 	}
 
-	if dd != t.hitD || i != t.hitDi {
+	if !(dd == t.hitD && i == t.hitDi) {
 		bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
 	}
 
-	if p != t.hitP || pi != t.hitPi {
+	if !(p == t.hitP && pi == t.hitPi) {
 		bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
 	}
 
