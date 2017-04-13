@@ -100,7 +100,7 @@ type (
 		r     interface{}
 		ver   int64
 
-		// information about last data page which Set/Put/Delete modified
+		// information about last data page which Set/Put/Delete accessed
 		hitD     *d // data page & pos of last write access
 		hitDi    int
 		hitP     *x // parent & pos for data page (= nil/-1 if no parent)
