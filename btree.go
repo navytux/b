@@ -532,6 +532,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 			return -1, false
 		}
 
+		// NOTE we are ok if i+1=hit.c -> hit.c will be returned
 		return t.find2(hit, k, i+1, hit.c-1)
 
 	case cmp < 0:
@@ -540,7 +541,8 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 			return -1, false
 		}
 
-		return t.find2(hit, k, 0, i)
+		// NOTE we are ok if i-1=-1 -> 0 will be returned
+		return t.find2(hit, k, 0, i-1)
 
 	default:
 		return i, true
