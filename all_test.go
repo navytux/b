@@ -155,6 +155,32 @@ func opPut(written bool) treeOp {
 	return opGet
 }
 
+func xeq(k1, k2 interface{} /*K*/, k1set, k2set bool) bool {
+	if k1set != k2set {
+		return false
+	}
+	if !k1set {
+		return true
+	}
+	return k1 == k2
+}
+
+func minStr(k interface{} /*K*/, kset bool) string {
+	s := fmt.Sprintf("%v", k)
+	if !kset {
+		s = fmt.Sprintf("-∞ /* %s */", s)
+	}
+	return s
+}
+
+func maxStr(k interface{} /*K*/, kset bool) string {
+	s := fmt.Sprintf("%v", k)
+	if !kset {
+		s = fmt.Sprintf("+∞ /* %s */", s)
+	}
+	return s
+}
+
 // checkHit rescans t from root and checks that hit D, P, Kmin/Kmax and rest all match what they should
 // it can be used after Set/Put/Delete to verify that all hit parameters were calculated correctly
 func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
@@ -170,8 +196,10 @@ func (t *Tree) checkHit(k interface{} /*K*/, op treeOp) {
 	i, pi := -1, -1
 	var ok bool
 
-	var hitKmin, hitKmax xkey
-	var hitPKmin, hitPKmax xkey
+	var hitKmin, hitKmax interface {} /*K*/
+	var hitPKmin, hitPKmax interface {} /*K*/
+	var hitKminSet, hitKmaxSet bool
+	var hitPKminSet, hitPKmaxSet bool
 
 loop:
 	// here the tree is immutable while we are rescanning it, which means
@@ -188,6 +216,8 @@ loop:
 		case *x:
 			hitPKmin = hitKmin
 			hitPKmax = hitKmax
+			hitPKminSet = hitKminSet
+			hitPKmaxSet = hitKmaxSet
 
 			if ok {
 				i++
@@ -198,18 +228,20 @@ loop:
 			q = p.x[pi].ch
 
 			if pi > 0 {
-				hitKmin.set(p.x[pi-1].k)
+				hitKmin = p.x[pi-1].k
+				hitKminSet = true
 
-				if hitPKmin.kset && t.cmp(hitKmin.k, hitPKmin.k) <= 0 {
-					bad("hitKmin not ↑: %v -> %v", hitPKmin.k, hitKmin.k)
+				if hitPKminSet && t.cmp(hitKmin, hitPKmin) <= 0 {
+					bad("hitKmin not ↑: %v -> %v", hitPKmin, hitKmin)
 				}
 			}
 
 			if pi < p.c { // pi = p.c means k = ∞
-				hitKmax.set(p.x[pi].k)
+				hitKmax = p.x[pi].k
+				hitKmaxSet = true
 
-				if hitPKmax.kset && t.cmp(hitKmax.k, hitPKmax.k) >= 0 {
-					bad("hitKmax not ↓: %v -> %v", hitPKmax.k, hitKmax.k)
+				if hitPKmaxSet && t.cmp(hitKmax, hitPKmax) >= 0 {
+					bad("hitKmax not ↓: %v -> %v", hitPKmax, hitKmax)
 				}
 			}
 
@@ -242,19 +274,23 @@ loop:
 		}
 	}
 
-	if !(hitKmin == t.hitKmin && hitKmax == t.hitKmax) {
-		bad("hitK mismatch:  [%v, %v)  ; want [%v, %v)", t.hitKmin, t.hitKmax, hitKmin, hitKmax)
+	if !(xeq(t.hitKmin, hitKmin, t.hitKminSet, hitKminSet) && xeq(t.hitKmax, hitKmax, t.hitKmaxSet, hitKmaxSet)) {
+		bad("hitK mismatch:  [%v, %v)  ; want [%v, %v)",
+			minStr(t.hitKmin, t.hitKminSet), maxStr(t.hitKmax, t.hitKmaxSet),
+			minStr(hitKmin, hitKminSet), maxStr(hitKmax, hitKmaxSet))
 	}
 
-	if !(hitPKmin == t.hitPKmin && hitPKmax == t.hitPKmax) {
-		bad("hitPK mismatch: [%v, %v)  ; want [%v, %v)", t.hitPKmin, t.hitPKmax, hitPKmin, hitPKmax)
+	if !(xeq(t.hitPKmin, hitPKmin, t.hitPKminSet, hitPKminSet) && xeq(t.hitPKmax, hitPKmax, t.hitPKmaxSet, hitPKmaxSet)) {
+		bad("hitPK mismatch:  [%v, %v)  ; want [%v, %v)",
+			minStr(t.hitPKmin, t.hitPKminSet), maxStr(t.hitPKmax, t.hitPKmaxSet),
+			minStr(hitPKmin, hitPKminSet), maxStr(hitPKmax, hitPKmaxSet))
 	}
 
-	if !(dd == t.hitD && i == t.hitDi) {
+	if !(t.hitD == dd && t.hitDi == i) {
 		bad("hitD mismatch: %v @%d  ; want %v @%d", t.hitD, t.hitDi, dd, i)
 	}
 
-	if !(p == t.hitP && pi == t.hitPi) {
+	if !(t.hitP == p && t.hitPi == pi) {
 		bad("hitP mismatch: %v @%d  ; want %v @%d", t.hitP, t.hitPi, p, pi)
 	}
 
