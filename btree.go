@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	//kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	//kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
-	kx = 2
-	kd = 2
+	kx = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	kd = 32 //TODO benchmark tune this number if using custom key/value type(s).
+	//kx = 2
+	//kd = 2
 )
 
 func init() {
@@ -311,7 +311,7 @@ func (t *Tree) catX(p, q, r *x, pi int) {
 // true.
 func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	//dbg("--- PRE Delete(%v)\t; %v @%d, [%v, %v)  pk: [%v, %v)\n%s", k, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax, t.dump())
-	defer t.checkHit(k, opDel)
+	//defer t.checkHit(k, opDel)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -718,7 +718,7 @@ func (t *Tree) SeekLast() (e *Enumerator, err error) {
 // Set sets the value associated with k.
 func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	//dbg("--- PRE Set(%v, %v)\t; %v @%d, [%v, %v)  pk: [%v, %v)\n%s", k, v, t.hitD, t.hitDi, t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax, t.dump())
-	defer t.checkHit(k, opSet)
+	//defer t.checkHit(k, opSet)
 	//defer func() {
 	//	dbg("--- POST\n%s\n====\n", t.dump())
 	//}()
@@ -832,7 +832,7 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 //
 // modulo the differing return values.
 func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists bool) (newV interface{} /*V*/, write bool)) (oldV interface{} /*V*/, written bool) {
-	defer func () { t.checkHit(k, opPut(written)) }()
+	//defer func () { t.checkHit(k, opPut(written)) }()
 	pi := -1
 	var p *x
 	q := t.r

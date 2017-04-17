@@ -105,10 +105,16 @@ type (
 		hitDi    int
 		hitP     *x // parent & pos for data page (= nil/-1 if no parent)
 		hitPi    int
-		hitKmin  xkey // hitD allowed key range is [hitKmin, hitKmax)
-		hitKmax  xkey
-		hitPKmin xkey // ----//--- for hitP
-		hitPKmax xkey
+
+		hitKmin  int // hitD allowed key range is [hitKmin, hitKmax)
+		hitKmax  int
+		hitPKmin int // ----//--- for hitP
+		hitPKmax int
+
+		hitKminSet  bool // whether corresponding hitK* value is set
+		hitKmaxSet  bool // if value is not set it is treated as ±∞ depending on context
+		hitPKminSet bool
+		hitPKmaxSet bool
 	}
 
 	xe struct { // x element
@@ -119,11 +125,6 @@ type (
 	x struct { // index page
 		c int
 		x [2*kx + 2]xe
-	}
-
-	xkey struct { // key + whether value is present at all
-		k    int
-		kset bool        // if not set - k not present
 	}
 )
 
@@ -151,10 +152,10 @@ func clr(q interface{}) {
 	}
 }
 
-func (xk *xkey) set(k int) {
-	xk.k = k
-	xk.kset = true
-}
+func (t *Tree) setHitKmin(k int) { t.hitKmin = k; t.hitKminSet = true }
+func (t *Tree) setHitKmax(k int) { t.hitKmax = k; t.hitKmaxSet = true }
+func (t *Tree) setHitPKmin(k int) { t.hitPKmin = k; t.hitPKminSet = true }
+func (t *Tree) setHitPKmax(k int) { t.hitPKmax = k; t.hitPKmaxSet = true }
 
 // -------------------------------------------------------------------------- x
 
@@ -233,7 +234,8 @@ func (t *Tree) Clear() {
 	clr(t.r)
 	t.c, t.first, t.last, t.r = 0, nil, nil, nil
 	t.hitD, t.hitDi, t.hitP, t.hitPi = nil, -1, nil, -1
-	t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax = xkey{}, xkey{}, xkey{}, xkey{}
+	t.hitKmin, t.hitKmax, t.hitPKmin, t.hitPKmax = zk, zk, zk, zk
+	t.hitKminSet, t.hitKmaxSet, t.hitPKminSet, t.hitPKmaxSet = false, false, false, false
 	t.ver++
 }
 
@@ -372,8 +374,8 @@ func (t *Tree) Delete(k int) (ok bool) {
 		return false
 	}
 
-	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
-	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
+	t.hitKminSet, t.hitKmaxSet = false, false // initially [-∞, +∞)
+	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
 		i, ok := t.find(q, k)
@@ -390,17 +392,19 @@ func (t *Tree) Delete(k int) (ok bool) {
 
 			t.hitPKmin = t.hitKmin
 			t.hitPKmax = t.hitKmax
+			t.hitPKminSet = t.hitKminSet
+			t.hitPKmaxSet = t.hitKmaxSet
 
 			p = x
 			pi = i
 			q = x.x[pi].ch
 
 			if pi > 0 { // k=-∞ @-1
-				t.hitKmin.set(p.x[pi-1].k)
+				t.setHitKmin(p.x[pi-1].k)
 			}
 
 			if pi < p.c { // k=+∞ @p.c
-				t.hitKmax.set(p.x[pi].k)
+				t.setHitKmax(p.x[pi].k)
 			}
 
 		case *d:
@@ -528,7 +532,7 @@ func (t *Tree) hitFind(k int) (i int, ok bool) {
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
-		if t.hitKmax.kset && t.cmp(k, t.hitKmax.k) >= 0 {
+		if t.hitKmaxSet && t.cmp(k, t.hitKmax) >= 0 {
 			// >= hitKmax
 			return -1, false
 		}
@@ -537,7 +541,7 @@ func (t *Tree) hitFind(k int) (i int, ok bool) {
 		return t.find2(hit, k, i+1, hit.c-1)
 
 	case cmp < 0:
-		if t.hitKmin.kset && t.cmp(k, t.hitKmin.k) < 0 {
+		if t.hitKminSet && t.cmp(k, t.hitKmin) < 0 {
 			// < hitKmin
 			return -1, false
 		}
@@ -626,7 +630,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k int, v int) {
 		l.mvL(q, 1)
 		t.insert(q, i-1, k, v)
 		p.x[pi-1].k = q.d[0].k
-		t.hitKmin.set(q.d[0].k)
+		t.setHitKmin(q.d[0].k)
 		//t.hitPi = pi			already pre-set this way
 		return
 	}
@@ -636,7 +640,7 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k int, v int) {
 			q.mvR(r, 1)
 			t.insert(q, i, k, v)
 			p.x[pi].k = r.d[0].k
-			t.hitKmax.set(r.d[0].k)
+			t.setHitKmax(r.d[0].k)
 			//t.hitPi = pi		already pre-set this way
 			return
 		}
@@ -644,10 +648,12 @@ func (t *Tree) overflow(p *x, q *d, pi, i int, k int, v int) {
 		t.insert(r, 0, k, v)
 		p.x[pi].k = k
 
-		t.hitKmin.set(k)
-		t.hitKmax = t.hitPKmax
+		t.setHitKmin(k)
 		if pi+1 < p.c { // k=+∞ @p.c
-			t.hitKmax.set(p.x[pi+1].k)
+			t.setHitKmax(p.x[pi+1].k)
+		} else {
+			t.hitKmax = t.hitPKmax
+			t.hitKmaxSet = t.hitPKmaxSet
 		}
 		t.hitPi = pi + 1
 		return
@@ -757,8 +763,8 @@ func (t *Tree) Set(k int, v int) {
 		return
 	}
 
-	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
-	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
+	t.hitKminSet, t.hitKmaxSet = false, false // initially [-∞, +∞)
+	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
 		i, ok := t.find(q, k)
@@ -775,17 +781,19 @@ func (t *Tree) Set(k int, v int) {
 
 			t.hitPKmin = t.hitKmin
 			t.hitPKmax = t.hitKmax
+			t.hitPKminSet = t.hitKminSet
+			t.hitPKmaxSet = t.hitKmaxSet
 
 			p = x
 			pi = i
 			q = p.x[pi].ch
 
 			if pi > 0 { // k=-∞ @-1
-				t.hitKmin.set(p.x[pi-1].k)
+				t.setHitKmin(p.x[pi-1].k)
 			}
 
 			if pi < p.c { // k=+∞ @p.c
-				t.hitKmax.set(p.x[pi].k)
+				t.setHitKmax(p.x[pi].k)
 			}
 
 		case *d:
@@ -895,8 +903,8 @@ func (t *Tree) Put(k int, upd func(oldV int, exists bool) (newV int, write bool)
 	}
 
 	// data page not quickly found - search and descent from root
-	t.hitKmin, t.hitKmax = xkey{}, xkey{} // initially [-∞, +∞)
-	t.hitPKmin, t.hitPKmax = xkey{}, xkey{}
+	t.hitKminSet, t.hitKmaxSet = false, false // initially [-∞, +∞)
+	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
 		i, ok := t.find(q, k)
@@ -913,17 +921,19 @@ func (t *Tree) Put(k int, upd func(oldV int, exists bool) (newV int, write bool)
 
 			t.hitPKmin = t.hitKmin
 			t.hitPKmax = t.hitKmax
+			t.hitPKminSet = t.hitKminSet
+			t.hitPKmaxSet = t.hitKmaxSet
 
 			p = x
 			pi = i
 			q = p.x[pi].ch
 
 			if pi > 0 { // k=-∞ @-1
-				t.hitKmin.set(p.x[pi-1].k)
+				t.setHitKmin(p.x[pi-1].k)
 			}
 
 			if pi < p.c { // k=+∞ @p.c
-				t.hitKmax.set(p.x[pi].k)
+				t.setHitKmax(p.x[pi].k)
 			}
 
 		case *d:
@@ -998,15 +1008,17 @@ func (t *Tree) split(p *x, q *d, pi, i int, k int, v int) {
 
 	if i > kd {
 		t.insert(r, i-kd, k, v)
-		t.hitKmin.set(p.x[pi].k)
-		t.hitKmax = t.hitPKmax
+		t.setHitKmin(p.x[pi].k)
 		if pi+1 < p.c { // k=+∞ @p.c
-			t.hitKmax.set(p.x[pi+1].k)
+			t.setHitKmax(p.x[pi+1].k)
+		} else {
+			t.hitKmax = t.hitPKmax
+			t.hitKmaxSet = t.hitPKmaxSet
 		}
 		t.hitPi = pi + 1
 	} else {
 		t.insert(q, i, k, v)
-		t.hitKmax.set(r.d[0].k)
+		t.setHitKmax(r.d[0].k)
 		//t.hitPi = pi			already pre-set this way
 	}
 }
@@ -1032,13 +1044,15 @@ func (t *Tree) splitX(p *x, q *x, pi int, i int) (*x, int) {
 	if i > kx {
 		q = r
 		i -= kx + 1
-		t.hitKmin.set(p.x[pi].k)
-		t.hitKmax = t.hitPKmax
+		t.setHitKmin(p.x[pi].k)
 		if pi+1 < p.c { // k=+∞ @p.c
-			t.hitKmax.set(p.x[pi+1].k)
+			t.setHitKmax(p.x[pi+1].k)
+		} else {
+			t.hitKmax = t.hitPKmax
+			t.hitKmaxSet = t.hitPKmaxSet
 		}
 	} else {
-		t.hitKmax.set(p.x[pi].k)
+		t.setHitKmax(p.x[pi].k)
 	}
 
 	return q, i
@@ -1051,7 +1065,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	if l != nil && l.c+q.c >= 2*kd {
 		l.mvR(q, 1)
 		p.x[pi-1].k = q.d[0].k
-		t.hitKmin.set(q.d[0].k)
+		t.setHitKmin(q.d[0].k)
 		//t.hitPi = pi			already pre-set this way
 		t.hitDi += 1
 		return
@@ -1060,7 +1074,7 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	if r != nil && q.c+r.c >= 2*kd {
 		q.mvL(r, 1)
 		p.x[pi].k = r.d[0].k
-		t.hitKmax.set(r.d[0].k)
+		t.setHitKmax(r.d[0].k)
 		//t.hitPi = pi			already pre-set this way
 		// hitDi stays the same
 		r.d[r.c] = zde // GC
@@ -1073,13 +1087,14 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 		pi--
 		t.cat(p, l, q, pi)
 		t.hitKmin = t.hitPKmin
+		t.hitKminSet = t.hitPKminSet	// XXX move vvv under else ? (but vs t.r == l)
 		if t.r == l {
 			// cat removed p
 			t.hitP = nil
 			t.hitPi = -1
 		} else {
 			if pi > 0 { // k=-∞ @-1
-				t.hitKmin.set(p.x[pi-1].k)
+				t.setHitKmin(p.x[pi-1].k)
 			}
 			t.hitPi = pi
 		}
@@ -1089,13 +1104,14 @@ func (t *Tree) underflow(p *x, q *d, pi int) {
 	t.cat(p, q, r, pi)
 	// hitD/hitDi stays unchanged
 	t.hitKmax = t.hitPKmax
+	t.hitKmaxSet = t.hitPKmaxSet		// XXX move vvv under else ? (but vs t.r == q)
 	if t.r == q {
 		// cat removed p
 		t.hitP = nil
 		t.hitPi = -1
 	} else {
 		if pi < p.c { // k=+∞ @p.c
-			t.hitKmax.set(p.x[pi].k)
+			t.setHitKmax(p.x[pi].k)
 		}
 		//t.hitPi = pi			already pre-set this way
 	}
@@ -1123,7 +1139,7 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 		i++
 		l.c--
 		p.x[pi-1].k = l.x[l.c].k
-		t.hitKmin.set(l.x[l.c].k)
+		t.setHitKmin(l.x[l.c].k)
 		return q, i
 	}
 
@@ -1132,7 +1148,7 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 		q.c++
 		q.x[q.c].ch = r.x[0].ch
 		p.x[pi].k = r.x[0].k
-		t.hitKmax.set(r.x[0].k)
+		t.setHitKmax(r.x[0].k)
 		copy(r.x[:], r.x[1:r.c])
 		r.c--
 		rc := r.c
@@ -1147,17 +1163,21 @@ func (t *Tree) underflowX(p *x, q *x, pi int, i int) (*x, int) {
 		pi--
 		t.catX(p, l, q, pi)
 		q = l
-		t.hitKmin = t.hitPKmin
 		if t.r != q && pi > 0 { // k=+∞ @p.c
-			t.hitKmin.set(p.x[pi-1].k)
+			t.setHitKmin(p.x[pi-1].k)
+		} else {
+			t.hitKmin = t.hitPKmin
+			t.hitKminSet = t.hitPKminSet
 		}
 		return q, i
 	}
 
 	t.catX(p, q, r, pi)
-	t.hitKmax = t.hitPKmax
 	if t.r != q && pi < p.c { // k=+∞ @p.c
-		t.hitKmax.set(p.x[pi].k)
+		t.setHitKmax(p.x[pi].k)
+	} else {
+		t.hitKmax = t.hitPKmax
+		t.hitKmaxSet = t.hitPKmaxSet
 	}
 	return q, i
 }
