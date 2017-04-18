@@ -497,23 +497,6 @@ func (t *Tree) find(q interface{}, k interface{} /*K*/) (i int, ok bool) {
 	return l, false
 }
 
-// find2 is the same as find but when we pre-know range to search and for data-page only
-func (t *Tree) find2(d *d, k interface{} /*K*/, l, h int) (i int, ok bool) {
-	for l <= h {
-		m := (l + h) >> 1
-		mk := d.d[m].k
-		switch cmp := t.cmp(k, mk); {
-		case cmp > 0:
-			l = m + 1
-		case cmp == 0:
-			return m, true
-		default:
-			h = m - 1
-		}
-	}
-	return l, false
-}
-
 // hitFind returns position for k in previously hit data page
 // if k should not reside in hit range: -1, false is returned
 // otherwise returns are:
@@ -529,6 +512,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 	}
 
 	i = t.hitDi
+	var h int
 
 	switch cmp := t.cmp(k, hit.d[i].k); {
 	case cmp > 0:
@@ -538,7 +522,7 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 		}
 
 		// NOTE we are ok if i+1=hit.c -> hit.c will be returned
-		return t.find2(hit, k, i+1, hit.c-1)
+		i, h = i+1, hit.c-1
 
 	case cmp < 0:
 		if t.hitKminSet && t.cmp(k, t.hitKmin) < 0 {
@@ -547,11 +531,24 @@ func (t *Tree) hitFind(k interface{} /*K*/) (i int, ok bool) {
 		}
 
 		// NOTE we are ok if i-1=-1 -> 0 will be returned
-		return t.find2(hit, k, 0, i-1)
+		i, h = 0, i-1
 
 	default:
 		return i, true
 	}
+
+	for i <= h {
+		m := (i + h) >> 1
+		switch cmp := t.cmp(k, hit.d[m].k); {
+		case cmp > 0:
+			i = m + 1
+		case cmp == 0:
+			return m, true
+		default:
+			h = m - 1
+		}
+	}
+	return i, false
 }
 
 // First returns the first item of the tree in the key collating order, or
