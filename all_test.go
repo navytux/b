@@ -211,9 +211,10 @@ loop:
 			break
 		}
 
-		i, ok = t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			i, ok = t.findX(x, k)
+
 			hitPKmin = hitKmin
 			hitPKmax = hitKmax
 			hitPKminSet = hitKminSet
@@ -246,6 +247,8 @@ loop:
 			}
 
 		case *d:
+			i, ok = t.find(x, k)
+
 			switch op {
 			case opGet:
 				// tried to search for key > max k in x

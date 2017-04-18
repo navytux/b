@@ -378,9 +378,9 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
-		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			i, ok := t.findX(x, k)
 			if ok {
 				i++
 			}
@@ -408,6 +408,8 @@ func (t *Tree) Delete(k interface{} /*K*/) (ok bool) {
 			}
 
 		case *d:
+			i, ok := t.find(x, k)
+
 			// data page found - perform the delete
 			t.hitP = p
 			t.hitPi = pi
@@ -461,37 +463,35 @@ func (t *Tree) extract(q *d, i int) { // (r interface{} /*V*/) {
 	return
 }
 
-func (t *Tree) find(q interface{}, k interface{} /*K*/) (i int, ok bool) {
-	var mk interface{} /*K*/
+func (t *Tree) findX(x *x, k interface{} /*K*/) (i int, ok bool) {
 	l := 0
-	switch x := q.(type) {
-	case *x:
-		h := x.c - 1
-		for l <= h {
-			m := (l + h) >> 1
-			mk = x.x[m].k
-			switch cmp := t.cmp(k, mk); {
-			case cmp > 0:
-				l = m + 1
-			case cmp == 0:
-				return m, true
-			default:
-				h = m - 1
-			}
+	h := x.c - 1
+	for l <= h {
+		m := (l + h) >> 1
+		switch cmp := t.cmp(k, x.x[m].k); {
+		case cmp > 0:
+			l = m + 1
+		case cmp == 0:
+			return m, true
+		default:
+			h = m - 1
 		}
-	case *d:
-		h := x.c - 1
-		for l <= h {
-			m := (l + h) >> 1
-			mk = x.d[m].k
-			switch cmp := t.cmp(k, mk); {
-			case cmp > 0:
-				l = m + 1
-			case cmp == 0:
-				return m, true
-			default:
-				h = m - 1
-			}
+	}
+	return l, false
+}
+
+func (t *Tree) find(x *d, k interface{} /*K*/) (i int, ok bool) {
+	l := 0
+	h := x.c - 1
+	for l <= h {
+		m := (l + h) >> 1
+		switch cmp := t.cmp(k, x.d[m].k); {
+		case cmp > 0:
+			l = m + 1
+		case cmp == 0:
+			return m, true
+		default:
+			h = m - 1
 		}
 	}
 	return l, false
@@ -570,21 +570,20 @@ func (t *Tree) Get(k interface{} /*K*/) (v interface{} /*V*/, ok bool) {
 	}
 
 	for {
-		var i int
-		if i, ok = t.find(q, k); ok {
-			switch x := q.(type) {
-			case *x:
-				q = x.x[i+1].ch
-				continue
-			case *d:
-				return x.d[i].v, true
-			}
-		}
 		switch x := q.(type) {
 		case *x:
+			i, ok := t.findX(x, k)
+			if ok {
+				i++
+			}
 			q = x.x[i].ch
-		default:
-			return
+
+		case *d:
+			i, ok := t.find(x, k)
+			if ok {
+				return x.d[i].v, true
+			}
+			return v, ok
 		}
 	}
 }
@@ -670,22 +669,17 @@ func (t *Tree) Seek(k interface{} /*K*/) (e *Enumerator, ok bool) {
 	}
 
 	for {
-		var i int
-		if i, ok = t.find(q, k); ok {
-			switch x := q.(type) {
-			case *x:
-				q = x.x[i+1].ch
-				continue
-			case *d:
-				return btEPool.get(nil, ok, i, k, x, t, t.ver), true
-			}
-		}
-
 		switch x := q.(type) {
 		case *x:
+			i, ok := t.findX(x, k)
+			if ok {
+				i++
+			}
 			q = x.x[i].ch
+
 		case *d:
-			return btEPool.get(nil, ok, i, k, x, t, t.ver), false
+			i, ok := t.find(x, k)
+			return btEPool.get(nil, ok, i, k, x, t, t.ver), ok
 		}
 	}
 }
@@ -764,9 +758,9 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
-		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			i, ok := t.findX(x, k)
 			if ok {
 				i++
 			}
@@ -794,6 +788,8 @@ func (t *Tree) Set(k interface{} /*K*/, v interface{} /*V*/) {
 			}
 
 		case *d:
+			i, ok := t.find(x, k)
+
 			// data page found - perform the update
 			t.hitP = p
 			t.hitPi = pi
@@ -904,9 +900,9 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 	t.hitPKminSet, t.hitPKmaxSet = false, false
 
 	for {
-		i, ok := t.find(q, k)
 		switch x := q.(type) {
 		case *x:
+			i, ok := t.findX(x, k)
 			if ok {
 				i++
 			}
@@ -934,6 +930,8 @@ func (t *Tree) Put(k interface{} /*K*/, upd func(oldV interface{} /*V*/, exists 
 			}
 
 		case *d:
+			i, ok := t.find(x, k)
+
 			// data page found - perform the update
 			t.hitP = p
 			t.hitPi = pi
